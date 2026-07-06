@@ -66,12 +66,12 @@ Config lives at `~/.config/clifwrap/config.toml` by default. Override it with `C
 [[providers.searchcli.accounts]]
 name = "acct-a"
 env_files = ["~/.config/secrets.env"]
-env = { SEARCHCLI_API_KEY = "env:SEARCHCLI_API_KEY" }
+env = { SEARCHCLI_API_KEY = "env:SEARCHCLI_TEAM_A_KEY" }
 
 [[providers.searchcli.accounts]]
 name = "acct-b"
 env_files = ["~/.config/secrets.env"]
-env = { SEARCHCLI_API_KEY = "env:SEARCHCLI_API_KEY2" }
+env = { SEARCHCLI_API_KEY = "env:SEARCHCLI_TEAM_B_KEY" }
 ```
 
 ### Minimal ScrapeCLI
@@ -80,12 +80,12 @@ env = { SEARCHCLI_API_KEY = "env:SEARCHCLI_API_KEY2" }
 [[providers.scrapecli.accounts]]
 name = "team-a"
 env_files = ["~/.config/secrets.env"]
-env = { SCRAPECLI_API_KEY = "env:SCRAPECLI_API_KEY_A" }
+env = { SCRAPECLI_API_KEY = "env:SCRAPECLI_TEAM_A_KEY" }
 
 [[providers.scrapecli.accounts]]
 name = "team-b"
 env_files = ["~/.config/secrets.env"]
-env = { SCRAPECLI_API_KEY = "env:SCRAPECLI_API_KEY_B" }
+env = { SCRAPECLI_API_KEY = "env:SCRAPECLI_TEAM_B_KEY" }
 ```
 
 The built-in SearchCLI and ScrapeCLI retry rules, auth-management command names, and usage endpoints live in the packaged catalog at `src/clifwrap/providers.toml`. User config only needs account definitions unless you want to override provider behavior.
@@ -138,7 +138,7 @@ searchcli logins
 searchcli logins use acct-b
 searchcli credentials default
 searchcli auth use acct-b
-searchcli auth add acct-c --env-file ~/.config/secrets.env --env-ref SEARCHCLI_API_KEY=SEARCHCLI_API_KEY3
+searchcli auth add acct-c --env-file ~/.config/secrets.env --env-ref SEARCHCLI_API_KEY=SEARCHCLI_TEAM_C_KEY
 searchcli auth add acct-d --env-command SEARCHCLI_API_KEY='secret-tool lookup service searchcli account acct-d'
 searchcli auth disable acct-c
 searchcli auth enable acct-c
@@ -147,7 +147,7 @@ searchcli auth remove acct-c
 scrapecli login accounts
 scrapecli accounts
 scrapecli login use team-b
-scrapecli login add team-c --env-file ~/.config/secrets.env --env-ref SCRAPECLI_API_KEY=SCRAPECLI_API_KEY_C
+scrapecli login add team-c --env-file ~/.config/secrets.env --env-ref SCRAPECLI_API_KEY=SCRAPECLI_TEAM_C_KEY
 scrapecli login add team-d --env-command SCRAPECLI_API_KEY='secret-tool lookup service scrapecli account team-d'
 scrapecli login disable team-c
 scrapecli login remove team-c
