@@ -1,0 +1,116 @@
+[providers.searchcli]
+interactive_mode = "line-repl"
+retry_exit_codes = [3]
+retry_patterns = [
+  "usage limit",
+  "upgrade your plan",
+  "rate limit",
+  "too many requests",
+  "429",
+  "432",
+  "not authenticated",
+  "no searchcli api key found",
+  "authentication timed out",
+]
+never_retry_patterns = [
+  "got unexpected extra argument",
+  "missing argument",
+  "no such command",
+  "invalid value",
+  "parse error",
+]
+
+[providers.searchcli.auth_management]
+command = "auth"
+aliases = ["accounts", "logins", "credentials"]
+
+[providers.searchcli.fallback_monitor]
+threshold = 3
+action = "warn"
+journald = true
+syslog = true
+stderr = true
+
+[providers.searchcli.usage]
+url = "https://api.searchcli.example/usage"
+auth_env = "SEARCHCLI_API_KEY"
+timeout_seconds = 15
+auth_header = "Authorization"
+auth_scheme = "Bearer"
+used_path = "key.usage"
+limit_path = "key.limit"
+fallback_used_path = "account.plan_usage"
+fallback_limit_path = "account.plan_limit"
+label = "key"
+fallback_label = "plan"
+
+[providers.searchcli.capacity_control]
+default_action = "queue"
+unknown_capacity_action = "allow"
+reserve_threshold = 25
+default_cost = 25
+queue_retention_seconds = 86400
+queue_max_items = 100
+snapshot_ttl_seconds = 60
+command_costs = { search = 25, extract = 50, crawl = 100, map = 100 }
+remediation_message = "Provision another SearchCLI key or enable another configured account before replaying queued work."
+remediation_commands = [
+  "clifwrap account list searchcli",
+  "clifwrap account add searchcli <name> --env-ref SEARCHCLI_API_KEY=ENVVAR",
+]
+
+[providers.scrapecli]
+passthrough_commands = ["login", "logout"]
+retry_patterns = [
+  "rate limit",
+  "too many requests",
+  "quota",
+  "remaining credits",
+  "insufficient credits",
+  "api key is required",
+  "not authenticated",
+  "unauthorized",
+  "forbidden",
+]
+never_retry_patterns = [
+  "unknown option",
+  "missing required argument",
+  "invalid status",
+]
+
+[providers.scrapecli.auth_management]
+command = "login"
+aliases = ["accounts"]
+
+[providers.scrapecli.fallback_monitor]
+threshold = 3
+action = "warn"
+journald = true
+syslog = true
+stderr = true
+
+[providers.scrapecli.usage]
+url = "{SCRAPECLI_API_URL:https://api.scrapecli.example}/v2/team/credit-usage"
+auth_env = "SCRAPECLI_API_KEY"
+timeout_seconds = 15
+auth_header = "Authorization"
+auth_scheme = "Bearer"
+content_type = "application/json"
+remaining_path = "data.remainingCredits"
+limit_path = "data.planCredits"
+label = "credits"
+
+[providers.scrapecli.capacity_control]
+default_action = "queue"
+unknown_capacity_action = "allow"
+reserve_threshold = 25
+default_cost = 5
+queue_retention_seconds = 86400
+queue_max_items = 100
+snapshot_ttl_seconds = 60
+command_costs = { scrape = 5, map = 10, search = 5, crawl = 25, extract = 10 }
+remediation_message = "Provision additional ScrapeCLI credits or enable another configured account before replaying queued work."
+remediation_commands = [
+  "clifwrap account list scrapecli",
+  "clifwrap account add scrapecli <name> --env-ref SCRAPECLI_API_KEY=ENVVAR",
+]
