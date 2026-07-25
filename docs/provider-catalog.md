@@ -22,7 +22,7 @@ Run `python scripts/generate_provider_catalog.py --write` after changing built-i
 | `syslog` | true |
 | `stderr` | true |
 
-## `cursor-agent`
+## `agentcli`
 
 | Field | Value |
 | --- | --- |

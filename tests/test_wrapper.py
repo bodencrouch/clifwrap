@@ -3562,7 +3562,7 @@ class WrapperTests(unittest.TestCase):
         self.assertTrue(marker.exists(), "doctor --probe did not run the status_command probe")
 
     def test_doctor_probe_does_not_leak_status_command_secrets(self) -> None:
-        secret = "supersecrettoken123"
+        probe_value = "probe-token-xyz-do-not-echo"
         (self.config_dir / "config.toml").write_text(
             textwrap.dedent(
                 f"""\
@@ -3571,14 +3571,14 @@ class WrapperTests(unittest.TestCase):
 
                 [[providers.somecli.accounts]]
                 name = "only"
-                env = {{ SOMECLI_TOKEN = "{secret}" }}
+                env = {{ SOMECLI_TOKEN = "{probe_value}" }}
                 """
             )
         )
         proc = self._run("doctor", "--probe", "--json")
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        self.assertNotIn(secret, proc.stdout)
-        self.assertNotIn(secret, proc.stderr)
+        self.assertNotIn(probe_value, proc.stdout)
+        self.assertNotIn(probe_value, proc.stderr)
         payload = json.loads(proc.stdout)
         validation = payload.get("validation") or []
         self.assertTrue(
@@ -3613,9 +3613,9 @@ class WrapperTests(unittest.TestCase):
         from clifwrap.config import merged_provider
 
         agent = merged_provider("agent", None)
-        cursor_agent = merged_provider("cursor-agent", None)
+        agentcli = merged_provider("agentcli", None)
         self.assertEqual(agent.interactive_mode, "tty-exec")
-        self.assertEqual(cursor_agent.interactive_mode, "tty-exec")
+        self.assertEqual(agentcli.interactive_mode, "tty-exec")
         self.assertFalse(agent.proactive_pick)
         self.assertIn("login", agent.passthrough_commands)
         self.assertIn("rate limit", agent.retry_patterns)
@@ -3642,7 +3642,7 @@ class WrapperTests(unittest.TestCase):
                 #!/usr/bin/env python3
                 import os
                 import sys
-                key = os.environ.get("CURSOR_API_KEY", "")
+                key = os.environ.get("AGENTCLI_API_KEY", "")
                 if key == "primary-key":
                     print("Error: rate limit exceeded", file=sys.stderr)
                     raise SystemExit(1)
@@ -3656,11 +3656,11 @@ class WrapperTests(unittest.TestCase):
                 """\
                 [[providers.agent.accounts]]
                 name = "primary"
-                env = { CURSOR_API_KEY = "primary-key" }
+                env = { AGENTCLI_API_KEY = "primary-key" }
 
                 [[providers.agent.accounts]]
                 name = "backup"
-                env = { CURSOR_API_KEY = "backup-key" }
+                env = { AGENTCLI_API_KEY = "backup-key" }
                 """
             )
         )
@@ -3694,7 +3694,7 @@ class WrapperTests(unittest.TestCase):
                 """\
                 [[providers.agent.accounts]]
                 name = "primary"
-                env = { CURSOR_API_KEY = "primary-key" }
+                env = { AGENTCLI_API_KEY = "primary-key" }
                 """
             )
         )

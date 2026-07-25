@@ -159,11 +159,11 @@ remediation_commands = [
   "clifwrap config validate",
 ]
 
-# Cursor Agent CLI (https://cursor.com/docs/cli/overview).
-# Official install creates both `agent` (primary) and `cursor-agent` (legacy) PATH names.
-# Prefer wrapping the name that resolves on your PATH. Auth is CURSOR_API_KEY per account
-# (https://cursor.com/docs/cli/reference/authentication). Interactive TUI uses tty-exec;
-# buffered failover applies to `agent -p` / `--print` headless runs.
+# Interactive coding-agent CLIs that ship a full-screen TUI plus a headless
+# print mode. Auth is a per-account API key env var. Interactive sessions use
+# tty-exec; buffered failover applies to headless `-p` / `--print` runs.
+# `agent` and `agentcli` are template names — wrap whatever binary resolves on
+# your PATH and set the key env var the tool actually reads.
 [providers.agent]
 interactive_mode = "tty-exec"
 passthrough_commands = [
@@ -215,8 +215,8 @@ journald = false
 syslog = true
 stderr = true
 
-# Legacy PATH name created by the Cursor Agent installer alongside `agent`.
-[providers.cursor-agent]
+# Alternate binary name for the same class of agent CLI.
+[providers.agentcli]
 interactive_mode = "tty-exec"
 passthrough_commands = [
   "login",
@@ -260,7 +260,7 @@ never_retry_patterns = [
 ]
 proactive_pick = false
 
-[providers.cursor-agent.fallback_monitor]
+[providers.agentcli.fallback_monitor]
 threshold = 2
 action = "warn"
 journald = false

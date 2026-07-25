@@ -52,14 +52,14 @@ Probe findings never echo command output or argv — a failing `status_command` 
 4. Add integration tests in `tests/test_wrapper.py` using a generic `somecli` fixture where possible.
 5. Do not add provider name literals to generic modules (`config.py`, `runtime.py`, etc.).
 
-## Cursor Agent notes
+## Interactive agent CLI notes
 
-Cursor Agent is a full-screen TUI. Do not use `interactive_mode = "line-repl"` for it — that mode is for line-oriented shells like SearchCLI. Catalog entry `agent` / `cursor-agent` uses `tty-exec`:
+Some coding-agent CLIs are full-screen TUIs. Do not use `interactive_mode = "line-repl"` for those — that mode is for line-oriented shells like SearchCLI. Catalog entries `agent` / `agentcli` use `tty-exec`:
 
 - Interactive sessions: select account → `exec` the real binary (TTY preserved).
-- `agent -p` / `--print`: buffered run with retry/failover across accounts.
+- `-p` / `--print` headless runs: buffered run with retry/failover across accounts.
 
-Passthrough covers Cursor management commands (`login`, `logout`, `status`, `mcp`, …) so browser login and MCP setup stay upstream.
+Passthrough covers management commands (`login`, `logout`, `status`, `mcp`, …) so browser login and MCP setup stay upstream.
 
 ## Related docs
 

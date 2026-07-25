@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SKIP_DIRS = {".git", "agentdecompile_projects", "__pycache__", ".pytest_cache", "dist", "build", ".nox"}
+SKIP_DIRS = {".git", "agentdecompile_projects", "__pycache__", ".pytest_cache", "dist", "build", ".nox", ".playwright-mcp"}
 SKIP_NAMES = {"actionlint", "actionlint.exe"}
 
 _ENCODED_REGEX = (
@@ -31,6 +31,7 @@ _ENCODED_REGEX = (
     "YXBpXC50YXZpbHlcLmNvbQ==",
     "ZmlyZWNyYXdsLWNsaQ==",
     "ZG9jc1wudGF2aWx5XC5jb20=",
+    "XGJjdXJzb3JcYg==",
 )
 
 PATTERNS = [

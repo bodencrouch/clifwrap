@@ -88,37 +88,37 @@ env = { SCRAPECLI_API_KEY = "env:SCRAPECLI_TEAM_B_KEY" }
 
 Retry rules, auth command names, and usage endpoints for SearchCLI and ScrapeCLI ship in `src/clifwrap/providers.toml`. Your config usually only needs account entries.
 
-### Cursor Agent CLI
+### Interactive agent CLIs
 
-[Cursor Agent](https://cursor.com/docs/cli/overview) installs as `agent` (and legacy `cursor-agent`). Auth for automation uses `CURSOR_API_KEY` ([docs](https://cursor.com/docs/cli/reference/authentication)).
+Some coding-agent CLIs ship a full-screen TUI plus a headless print mode and authenticate with a per-account API key env var. The catalog names `agent` and `agentcli` are templates — wrap whatever binary resolves on your PATH and set the key env var the tool actually reads.
 
 ```bash
 clifwrap init
-clifwrap account add agent primary --env-ref CURSOR_API_KEY=CURSOR_API_KEY_PRIMARY
-clifwrap account add agent backup --env-ref CURSOR_API_KEY=CURSOR_API_KEY_BACKUP
+clifwrap account add agent primary --env-ref AGENTCLI_API_KEY=AGENTCLI_API_KEY_PRIMARY
+clifwrap account add agent backup --env-ref AGENTCLI_API_KEY=AGENTCLI_API_KEY_BACKUP
 clifwrap install agent
-# If another tool already owns `agent` on PATH, wrap the legacy name instead:
-# clifwrap account add cursor-agent primary --env-ref CURSOR_API_KEY=CURSOR_API_KEY_PRIMARY
-# clifwrap install cursor-agent
+# If another tool already owns `agent` on PATH, wrap the alternate name instead:
+# clifwrap account add agentcli primary --env-ref AGENTCLI_API_KEY=AGENTCLI_API_KEY_PRIMARY
+# clifwrap install agentcli
 ```
 
 ```toml
 [[providers.agent.accounts]]
 name = "primary"
-env = { CURSOR_API_KEY = "env:CURSOR_API_KEY_PRIMARY" }
+env = { AGENTCLI_API_KEY = "env:AGENTCLI_API_KEY_PRIMARY" }
 
 [[providers.agent.accounts]]
 name = "backup"
-env = { CURSOR_API_KEY = "env:CURSOR_API_KEY_BACKUP" }
+env = { AGENTCLI_API_KEY = "env:AGENTCLI_API_KEY_BACKUP" }
 ```
 
-Behavior matches Cursor CLI syntax:
+Behavior:
 
 - Interactive TUI (`agent`, `agent "prompt"`) uses `tty-exec` — picks an account, then execs the real binary with a live terminal (no output buffering).
 - Headless print mode (`agent -p "..."`, `--print`, optional `--force` / `--output-format`) gets buffered failover on rate-limit / auth errors.
-- `agent login`, `logout`, `status`, `about`, `models`, `mcp`, … pass through unchanged.
+- Management commands (`login`, `logout`, `status`, `about`, `models`, `mcp`, …) pass through unchanged.
 
-`agent status --format json` reports auth identity, not remaining quota, so proactive pick stays off unless you add your own `status_command` / `usage` metadata.
+If the tool's status command reports auth identity but not remaining quota, proactive pick stays off unless you add your own `status_command` / `usage` metadata.
 
 See [docs/configuration.md](docs/configuration.md) for the full reference.
 
