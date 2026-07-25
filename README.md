@@ -88,6 +88,38 @@ env = { SCRAPECLI_API_KEY = "env:SCRAPECLI_TEAM_B_KEY" }
 
 Retry rules, auth command names, and usage endpoints for SearchCLI and ScrapeCLI ship in `src/clifwrap/providers.toml`. Your config usually only needs account entries.
 
+### Interactive agent CLIs
+
+Some coding-agent CLIs ship a full-screen TUI plus a headless print mode and authenticate with a per-account API key env var. The catalog names `agent` and `agentcli` are templates — wrap whatever binary resolves on your PATH and set the key env var the tool actually reads.
+
+```bash
+clifwrap init
+clifwrap account add agent primary --env-ref AGENTCLI_API_KEY=AGENTCLI_API_KEY_PRIMARY
+clifwrap account add agent backup --env-ref AGENTCLI_API_KEY=AGENTCLI_API_KEY_BACKUP
+clifwrap install agent
+# If another tool already owns `agent` on PATH, wrap the alternate name instead:
+# clifwrap account add agentcli primary --env-ref AGENTCLI_API_KEY=AGENTCLI_API_KEY_PRIMARY
+# clifwrap install agentcli
+```
+
+```toml
+[[providers.agent.accounts]]
+name = "primary"
+env = { AGENTCLI_API_KEY = "env:AGENTCLI_API_KEY_PRIMARY" }
+
+[[providers.agent.accounts]]
+name = "backup"
+env = { AGENTCLI_API_KEY = "env:AGENTCLI_API_KEY_BACKUP" }
+```
+
+Behavior:
+
+- Interactive TUI (`agent`, `agent "prompt"`) uses `tty-exec` — picks an account, then execs the real binary with a live terminal (no output buffering).
+- Headless print mode (`agent -p "..."`, `--print`, optional `--force` / `--output-format`) gets buffered failover on rate-limit / auth errors.
+- Management commands (`login`, `logout`, `status`, `about`, `models`, `mcp`, …) pass through unchanged.
+
+If the tool's status command reports auth identity but not remaining quota, proactive pick stays off unless you add your own `status_command` / `usage` metadata.
+
 See [docs/configuration.md](docs/configuration.md) for the full reference.
 
 ### Capacity control
@@ -117,6 +149,8 @@ remediation_commands = ["clifwrap account add somecli <name> --env-ref SOMECLI_T
 Command costs are estimates, not billing truth. SearchCLI and ScrapeCLI defaults live in `providers.toml` so you can override them without touching code.
 
 When capacity control picks an account, retries for that request stay on that account. A retryable upstream error will not burn through your reserve accounts.
+
+With `proactive_pick` enabled (default when usage or `status_command` is configured), clifwrap also picks the best starting account before the first upstream call so a depleted default does not burn a retry. See [docs/configuration.md](docs/configuration.md#proactive-starting-account).
 
 ### Account management from the wrapped CLI
 
@@ -313,6 +347,7 @@ scrapecli search "example"
 ## Docs
 
 - [Configuration](docs/configuration.md)
+- [Provider authoring](docs/provider-authoring.md)
 - [CLI reference](docs/cli-reference.md)
 - [Built-in provider catalog](docs/provider-catalog.md)
 - [Migration from cli-fallback-wrapper](docs/migration.md)

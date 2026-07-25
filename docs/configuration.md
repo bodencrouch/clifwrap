@@ -45,9 +45,33 @@ Provider tables can set:
 | `retry_patterns` | Lowercased stderr/stdout snippets that trigger retry |
 | `never_retry_patterns` | Snippets that block retry even if another rule matches |
 | `retry_on_any_error` | Retry any nonzero exit unless blocked by `never_retry_patterns` |
-| `interactive_mode` | Currently `line-repl` for line-by-line wrapped shells |
+| `interactive_mode` | `line-repl` for line-by-line shells; `tty-exec` for full-screen TUIs (e.g. interactive agent CLIs) |
 | `status_command` | Command that returns JSON with `remaining`, `limit`, and optionally `used` |
+| `proactive_pick` | Headroom-first starting account before the first upstream call (default `true` when `status_command` or `usage` is set) |
 | `passthrough_commands` | Upstream subcommands that skip wrapper auth handling |
+
+### Catalog list merge
+
+Built-in catalog providers (`searchcli`, `scrapecli`, `examplecli`) ship default retry and passthrough lists in `src/clifwrap/providers.toml`. User overrides **append** by default:
+
+```toml
+[providers.searchcli]
+retry_patterns = ["my custom quota message"]
+```
+
+Effective patterns include catalog defaults plus `my custom quota message`.
+
+To replace catalog defaults entirely, use the `*_replace` sibling keys:
+
+```toml
+[providers.searchcli]
+retry_patterns_replace = ["only this pattern"]
+never_retry_patterns_replace = ["parse error"]
+retry_exit_codes_replace = [42]
+passthrough_commands_replace = ["login"]
+```
+
+Append and replace keys apply to the same list fields documented above, including providers that have no catalog entry. See `examplecli` in [provider-catalog.md](provider-catalog.md) for a full catalog template.
 
 ## Accounts
 
@@ -150,7 +174,7 @@ remediation_commands = ["clifwrap account add somecli <name> --env-ref SOMECLI_T
 | `command_costs` | Per-subcommand cost map |
 | `queue_retention_seconds` | How long queued items stay replayable |
 | `queue_max_items` | Max queued items per provider before new work is shed |
-| `snapshot_ttl_seconds` | Usage cache TTL for admission decisions |
+| `snapshot_ttl_seconds` | Usage cache TTL for admission and proactive starting-account decisions |
 | `remediation_message` | Message shown in status and queue output |
 | `remediation_commands` | Suggested commands for operators |
 
@@ -166,6 +190,28 @@ Environment overrides:
 - `CLIFWRAP_PROVIDER_<NAME>_CAPACITY_SNAPSHOT_TTL_SECONDS`
 - `CLIFWRAP_PROVIDER_<NAME>_CAPACITY_REMEDIATION_MESSAGE`
 - `CLIFWRAP_PROVIDER_<NAME>_CAPACITY_REMEDIATION_COMMANDS` — comma-separated command strings
+
+### Proactive starting account
+
+When `proactive_pick` is enabled (the default for providers with `status_command` or `usage` metadata), clifwrap probes account capacity before the first upstream call and starts on the account with the most headroom. The persisted default is kept when its remaining quota is at or above `reserve_threshold + estimated_cost` (or `1` when capacity control is absent).
+
+```toml
+[providers.somecli]
+status_command = ["somecli", "usage", "--json"]
+proactive_pick = true  # default when status_command or usage is set
+
+[providers.somecli.capacity_control]
+reserve_threshold = 5
+default_cost = 1
+```
+
+Set `proactive_pick = false` to keep legacy default-first ordering without headroom comparison.
+
+When the starting account differs from the default, clifwrap prints a one-line stderr notice naming the account and reason. Reactive failover after a retryable upstream error is unchanged.
+
+`status --json` and `doctor --json` include per-account `starting_eligible` and `starting_ineligible_reason` using the same reserve and cost rules.
+
+Higher `snapshot_ttl_seconds` reduces probe latency but can approve a run from stale quota data. Lower TTL increases probe cost and cold-start latency.
 
 ## Usage lookups
 

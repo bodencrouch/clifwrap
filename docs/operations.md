@@ -11,6 +11,7 @@ clifwrap config paths
 clifwrap config validate
 clifwrap doctor --check
 clifwrap doctor --json --check
+clifwrap doctor --probe --check
 clifwrap status --check
 clifwrap status --json --check
 ```
@@ -18,8 +19,9 @@ clifwrap status --json --check
 | Command | What it checks |
 | --- | --- |
 | `config paths` | Resolved `CLIFWRAP_CONFIG`, `CLIFWRAP_STATE_DIR`, and `CLIFWRAP_BIN_DIR` |
-| `config validate` | TOML parsing only — no shims or queue |
-| `doctor --check` | Paths, config, shim records, backups, default account pointers, queue readability |
+| `config validate` | Parsed config, provider static validation (accounts, env refs, metadata) |
+| `doctor --check` | Above plus shim records, backups, default accounts, queue readability |
+| `doctor --probe` | Adds live usage/status probes. Off by default because probes resolve credentials and make authenticated calls |
 | `status --check` | Low fallback pool, bad queue state, recovery-hook failures, capacity below policy |
 
 ## Account inventory
@@ -48,6 +50,14 @@ clifwrap queue drop --expired
 ```
 
 `queue run` rechecks capacity before replay. If still below reserve, the item stays queued and replay metadata updates — nothing is duplicated.
+
+## Proactive starting account
+
+When `proactive_pick` is enabled (default for providers with usage or `status_command` metadata), wrapped commands start on the account with the most known headroom instead of always trying the persisted default first. This reduces wasted retries when the default is nearly empty.
+
+- Tune `snapshot_ttl_seconds` against probe cost: stale snapshots may start on an account that fails immediately; lower TTL is fresher but slower on cold paths.
+- `status --json` exposes `starting_eligible` per account for automation.
+- Set `proactive_pick = false` per provider to restore default-first behavior.
 
 ## Shim recovery
 

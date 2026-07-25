@@ -50,21 +50,41 @@ class AccountConfig:
     prepare_on: str = "always"
 
 
+def _merge_list_field(catalog: list, user: list, replace: list | None) -> list:
+    if replace is not None:
+        return list(replace)
+    if user:
+        merged: list = []
+        seen: set = set()
+        for item in [*catalog, *user]:
+            if item in seen:
+                continue
+            seen.add(item)
+            merged.append(item)
+        return merged
+    return list(catalog)
+
+
 @dataclass
 class ProviderConfig:
     name: str
     command: list[str] | None = None
     retry_exit_codes: list[int] = field(default_factory=list)
+    retry_exit_codes_replace: list[int] | None = None
     retry_patterns: list[str] = field(default_factory=list)
+    retry_patterns_replace: list[str] | None = None
     never_retry_patterns: list[str] = field(default_factory=list)
+    never_retry_patterns_replace: list[str] | None = None
     retry_on_any_error: bool = False
     interactive_mode: str | None = None
     status_command: list[str] | None = None
     passthrough_commands: list[str] = field(default_factory=list)
+    passthrough_commands_replace: list[str] | None = None
     auth_management: "AuthManagementConfig | None" = None
     fallback_monitor: "FallbackMonitorConfig | None" = None
     usage: "UsageConfig | None" = None
     capacity_control: "CapacityControlConfig | None" = None
+    proactive_pick: bool | None = None
     accounts: list[AccountConfig] = field(default_factory=list)
 
 
@@ -395,16 +415,41 @@ def _provider_from_raw(name: str, raw_provider: dict[str, Any]) -> ProviderConfi
         name=name,
         command=_command_list(raw_provider.get("command"), field_name=f"providers.{name}.command") or None,
         retry_exit_codes=[int(item) for item in raw_provider.get("retry_exit_codes", [])],
+        retry_exit_codes_replace=(
+            [int(item) for item in raw_provider["retry_exit_codes_replace"]]
+            if "retry_exit_codes_replace" in raw_provider
+            else None
+        ),
         retry_patterns=[str(item).lower() for item in raw_provider.get("retry_patterns", [])],
+        retry_patterns_replace=(
+            [str(item).lower() for item in raw_provider["retry_patterns_replace"]]
+            if "retry_patterns_replace" in raw_provider
+            else None
+        ),
         never_retry_patterns=[str(item).lower() for item in raw_provider.get("never_retry_patterns", [])],
+        never_retry_patterns_replace=(
+            [str(item).lower() for item in raw_provider["never_retry_patterns_replace"]]
+            if "never_retry_patterns_replace" in raw_provider
+            else None
+        ),
         retry_on_any_error=bool(raw_provider.get("retry_on_any_error", False)),
         interactive_mode=raw_provider.get("interactive_mode"),
         status_command=_command_list(raw_provider.get("status_command"), field_name=f"providers.{name}.status_command") or None,
         passthrough_commands=_command_list(raw_provider.get("passthrough_commands"), field_name=f"providers.{name}.passthrough_commands"),
+        passthrough_commands_replace=(
+            _command_list(raw_provider.get("passthrough_commands_replace"), field_name=f"providers.{name}.passthrough_commands_replace")
+            if "passthrough_commands_replace" in raw_provider
+            else None
+        ),
         auth_management=_auth_management_from_raw(raw_provider.get("auth_management"), field_name=f"providers.{name}.auth_management"),
         fallback_monitor=_fallback_monitor_from_raw(raw_provider.get("fallback_monitor"), field_name=f"providers.{name}.fallback_monitor"),
         usage=_usage_from_raw(raw_provider.get("usage"), field_name=f"providers.{name}.usage"),
         capacity_control=_capacity_control_from_raw(raw_provider.get("capacity_control"), field_name=f"providers.{name}.capacity_control"),
+        proactive_pick=(
+            bool(raw_provider["proactive_pick"])
+            if "proactive_pick" in raw_provider
+            else None
+        ),
         accounts=_load_accounts(raw_provider.get("accounts")),
     )
 
@@ -434,25 +479,35 @@ def merged_provider(name: str, raw: ProviderConfig | None) -> ProviderConfig:
     catalog = catalog_provider(name)
     if catalog is None and raw is None:
         return ProviderConfig(name=name)
-    if catalog is None:
-        provider = raw or ProviderConfig(name=name)
-    elif raw is None:
+    if raw is None:
         provider = catalog
     else:
+        # Providers with no catalog entry merge against an empty base so that
+        # *_replace keys still take effect instead of silently doing nothing.
+        base = catalog or ProviderConfig(name=name)
         provider = ProviderConfig(
             name=name,
-            command=raw.command or catalog.command,
-            retry_exit_codes=raw.retry_exit_codes or catalog.retry_exit_codes,
-            retry_patterns=raw.retry_patterns or catalog.retry_patterns,
-            never_retry_patterns=raw.never_retry_patterns or catalog.never_retry_patterns,
-            retry_on_any_error=raw.retry_on_any_error or catalog.retry_on_any_error,
-            interactive_mode=raw.interactive_mode or catalog.interactive_mode,
-            status_command=raw.status_command or catalog.status_command,
-            passthrough_commands=raw.passthrough_commands or catalog.passthrough_commands,
-            auth_management=raw.auth_management or catalog.auth_management,
-            fallback_monitor=raw.fallback_monitor or catalog.fallback_monitor,
-            usage=raw.usage or catalog.usage,
-            capacity_control=raw.capacity_control or catalog.capacity_control,
+            command=raw.command or base.command,
+            retry_exit_codes=_merge_list_field(base.retry_exit_codes, raw.retry_exit_codes, raw.retry_exit_codes_replace),
+            retry_patterns=_merge_list_field(base.retry_patterns, raw.retry_patterns, raw.retry_patterns_replace),
+            never_retry_patterns=_merge_list_field(
+                base.never_retry_patterns,
+                raw.never_retry_patterns,
+                raw.never_retry_patterns_replace,
+            ),
+            retry_on_any_error=raw.retry_on_any_error or base.retry_on_any_error,
+            interactive_mode=raw.interactive_mode or base.interactive_mode,
+            status_command=raw.status_command or base.status_command,
+            passthrough_commands=_merge_list_field(
+                base.passthrough_commands,
+                raw.passthrough_commands,
+                raw.passthrough_commands_replace,
+            ),
+            auth_management=raw.auth_management or base.auth_management,
+            fallback_monitor=raw.fallback_monitor or base.fallback_monitor,
+            usage=raw.usage or base.usage,
+            capacity_control=raw.capacity_control or base.capacity_control,
+            proactive_pick=raw.proactive_pick if raw.proactive_pick is not None else base.proactive_pick,
             accounts=raw.accounts,
         )
     auth = provider.auth_management
@@ -560,6 +615,8 @@ def merged_provider(name: str, raw: ProviderConfig | None) -> ProviderConfig:
             raise ValueError(f"{capacity_max_items_env} must be at least 1")
         if provider.capacity_control.snapshot_ttl_seconds < 1:
             raise ValueError(f"{capacity_snapshot_ttl_env} must be at least 1")
+    if provider.proactive_pick is None:
+        provider.proactive_pick = bool(provider.status_command or provider.usage)
     return provider
 
 

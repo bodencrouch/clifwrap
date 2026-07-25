@@ -117,3 +117,152 @@ remediation_commands = [
   "clifwrap account list scrapecli",
   "clifwrap account add scrapecli <name> --env-ref SCRAPECLI_API_KEY=ENVVAR",
 ]
+
+# Reference-only catalog entry. Copy fields into user config or a forked providers.toml
+# when authoring a new provider. Do not install a shim for examplecli.
+# proactive_pick defaults to true when usage or status_command is configured.
+[providers.examplecli]
+retry_exit_codes = [1]
+retry_patterns = ["quota exceeded", "rate limit"]
+never_retry_patterns = ["unknown option"]
+passthrough_commands = ["login"]
+interactive_mode = "line-repl"
+
+[providers.examplecli.auth_management]
+command = "auth"
+aliases = ["accounts", "credentials"]
+
+[providers.examplecli.fallback_monitor]
+threshold = 2
+action = "warn"
+journald = false
+syslog = true
+stderr = true
+
+[providers.examplecli.usage]
+url = "https://api.examplecli.example/usage"
+auth_env = "EXAMPLECLI_API_KEY"
+timeout_seconds = 10
+remaining_path = "remaining"
+limit_path = "limit"
+label = "quota"
+
+[providers.examplecli.capacity_control]
+default_action = "queue"
+unknown_capacity_action = "allow"
+reserve_threshold = 1
+default_cost = 1
+command_costs = { search = 1, crawl = 3 }
+remediation_message = "Add another account or raise quota before replaying queued work."
+remediation_commands = [
+  "clifwrap account list examplecli",
+  "clifwrap config validate",
+]
+
+# Interactive coding-agent CLIs that ship a full-screen TUI plus a headless
+# print mode. Auth is a per-account API key env var. Interactive sessions use
+# tty-exec; buffered failover applies to headless `-p` / `--print` runs.
+# `agent` and `agentcli` are template names — wrap whatever binary resolves on
+# your PATH and set the key env var the tool actually reads.
+[providers.agent]
+interactive_mode = "tty-exec"
+passthrough_commands = [
+  "login",
+  "logout",
+  "status",
+  "whoami",
+  "about",
+  "models",
+  "update",
+  "mcp",
+  "plugin",
+  "worker",
+  "ls",
+  "resume",
+  "create-chat",
+  "generate-rule",
+  "rule",
+  "install-shell-integration",
+  "uninstall-shell-integration",
+  "help",
+]
+retry_patterns = [
+  "rate limit",
+  "too many requests",
+  "429",
+  "usage limit",
+  "out of usage",
+  "spend limit",
+  "quota",
+  "not authenticated",
+  "unauthorized",
+  "authentication required",
+  "invalid api key",
+  "resource_exhausted",
+]
+never_retry_patterns = [
+  "unknown option",
+  "unknown command",
+  "missing required argument",
+  "invalid argument",
+]
+proactive_pick = false
+
+[providers.agent.fallback_monitor]
+threshold = 2
+action = "warn"
+journald = false
+syslog = true
+stderr = true
+
+# Alternate binary name for the same class of agent CLI.
+[providers.agentcli]
+interactive_mode = "tty-exec"
+passthrough_commands = [
+  "login",
+  "logout",
+  "status",
+  "whoami",
+  "about",
+  "models",
+  "update",
+  "mcp",
+  "plugin",
+  "worker",
+  "ls",
+  "resume",
+  "create-chat",
+  "generate-rule",
+  "rule",
+  "install-shell-integration",
+  "uninstall-shell-integration",
+  "help",
+]
+retry_patterns = [
+  "rate limit",
+  "too many requests",
+  "429",
+  "usage limit",
+  "out of usage",
+  "spend limit",
+  "quota",
+  "not authenticated",
+  "unauthorized",
+  "authentication required",
+  "invalid api key",
+  "resource_exhausted",
+]
+never_retry_patterns = [
+  "unknown option",
+  "unknown command",
+  "missing required argument",
+  "invalid argument",
+]
+proactive_pick = false
+
+[providers.agentcli.fallback_monitor]
+threshold = 2
+action = "warn"
+journald = false
+syslog = true
+stderr = true

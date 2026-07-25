@@ -3,6 +3,94 @@
 This file is generated from `src/clifwrap/providers.toml`.
 Run `python scripts/generate_provider_catalog.py --write` after changing built-in provider metadata.
 
+## `agent`
+
+| Field | Value |
+| --- | --- |
+| `interactive_mode` | `tty-exec` |
+| `passthrough_commands` | `login`, `logout`, `status`, `whoami`, `about`, `models`, `update`, `mcp`, `plugin`, `worker`, `ls`, `resume`, `create-chat`, `generate-rule`, `rule`, `install-shell-integration`, `uninstall-shell-integration`, `help` |
+| `retry_patterns` | `rate limit`, `too many requests`, `429`, `usage limit`, `out of usage`, `spend limit`, `quota`, `not authenticated`, `unauthorized`, `authentication required`, `invalid api key`, `resource_exhausted` |
+| `never_retry_patterns` | `unknown option`, `unknown command`, `missing required argument`, `invalid argument` |
+
+### Fallback Monitor
+
+| Field | Value |
+| --- | --- |
+| `threshold` | `2` |
+| `action` | `warn` |
+| `journald` | false |
+| `syslog` | true |
+| `stderr` | true |
+
+## `agentcli`
+
+| Field | Value |
+| --- | --- |
+| `interactive_mode` | `tty-exec` |
+| `passthrough_commands` | `login`, `logout`, `status`, `whoami`, `about`, `models`, `update`, `mcp`, `plugin`, `worker`, `ls`, `resume`, `create-chat`, `generate-rule`, `rule`, `install-shell-integration`, `uninstall-shell-integration`, `help` |
+| `retry_patterns` | `rate limit`, `too many requests`, `429`, `usage limit`, `out of usage`, `spend limit`, `quota`, `not authenticated`, `unauthorized`, `authentication required`, `invalid api key`, `resource_exhausted` |
+| `never_retry_patterns` | `unknown option`, `unknown command`, `missing required argument`, `invalid argument` |
+
+### Fallback Monitor
+
+| Field | Value |
+| --- | --- |
+| `threshold` | `2` |
+| `action` | `warn` |
+| `journald` | false |
+| `syslog` | true |
+| `stderr` | true |
+
+## `examplecli`
+
+| Field | Value |
+| --- | --- |
+| `interactive_mode` | `line-repl` |
+| `passthrough_commands` | `login` |
+| `retry_exit_codes` | `1` |
+| `retry_patterns` | `quota exceeded`, `rate limit` |
+| `never_retry_patterns` | `unknown option` |
+
+### Auth Management
+
+| Field | Value |
+| --- | --- |
+| `command` | `auth` |
+| `aliases` | `accounts`, `credentials` |
+
+### Fallback Monitor
+
+| Field | Value |
+| --- | --- |
+| `threshold` | `2` |
+| `action` | `warn` |
+| `journald` | false |
+| `syslog` | true |
+| `stderr` | true |
+
+### Usage
+
+| Field | Value |
+| --- | --- |
+| `url` | `https://api.examplecli.example/usage` |
+| `auth_env` | `EXAMPLECLI_API_KEY` |
+| `timeout_seconds` | `10` |
+| `remaining_path` | `remaining` |
+| `limit_path` | `limit` |
+| `label` | `quota` |
+
+### Capacity Control
+
+| Field | Value |
+| --- | --- |
+| `default_action` | `queue` |
+| `unknown_capacity_action` | `allow` |
+| `reserve_threshold` | `1` |
+| `default_cost` | `1` |
+| `command_costs` | `crawl=3`, `search=1` |
+| `remediation_message` | `Add another account or raise quota before replaying queued work.` |
+| `remediation_commands` | `clifwrap account list examplecli`, `clifwrap config validate` |
+
 ## `scrapecli`
 
 | Field | Value |
