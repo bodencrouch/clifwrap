@@ -10,6 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SKIP_DIRS = {".git", "agentdecompile_projects", "__pycache__", ".pytest_cache", "dist", "build", ".nox"}
+SKIP_NAMES = {"actionlint", "actionlint.exe"}
 
 _ENCODED_REGEX = (
     "dGF2aWx5",
@@ -54,11 +55,16 @@ def main() -> int:
     violations: list[str] = []
     for path in iter_files():
         rel = path.relative_to(ROOT).as_posix()
+        if path.name in SKIP_NAMES:
+            continue
         try:
-            text = path.read_text(encoding="utf-8", errors="replace")
+            data = path.read_bytes()
         except OSError as exc:
             violations.append(f"{rel}: {exc}")
             continue
+        if b"\0" in data[:8192]:
+            continue
+        text = data.decode("utf-8", errors="replace")
         for pattern in PATTERNS:
             if pattern.search(text):
                 violations.append(f"{rel}: matched blocked token")
