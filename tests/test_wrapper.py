@@ -3609,6 +3609,106 @@ class WrapperTests(unittest.TestCase):
         self.assertEqual(merged.retry_exit_codes, [42])
         self.assertEqual(merged.passthrough_commands, ["login"])
 
+    def test_agent_catalog_provider_is_tty_exec(self) -> None:
+        from clifwrap.config import merged_provider
+
+        agent = merged_provider("agent", None)
+        cursor_agent = merged_provider("cursor-agent", None)
+        self.assertEqual(agent.interactive_mode, "tty-exec")
+        self.assertEqual(cursor_agent.interactive_mode, "tty-exec")
+        self.assertFalse(agent.proactive_pick)
+        self.assertIn("login", agent.passthrough_commands)
+        self.assertIn("rate limit", agent.retry_patterns)
+
+    def test_wants_tty_exec_skips_print_mode(self) -> None:
+        from clifwrap.config import ProviderConfig
+        from clifwrap.runtime import _wants_tty_exec
+
+        provider = ProviderConfig(name="agent", interactive_mode="tty-exec")
+        with mock.patch("clifwrap.runtime.sys.stdin") as stdin, mock.patch("clifwrap.runtime.sys.stdout") as stdout:
+            stdin.isatty.return_value = True
+            stdout.isatty.return_value = True
+            self.assertTrue(_wants_tty_exec(provider, []))
+            self.assertTrue(_wants_tty_exec(provider, ["refactor auth"]))
+            self.assertFalse(_wants_tty_exec(provider, ["-p", "refactor auth"]))
+            self.assertFalse(_wants_tty_exec(provider, ["--print", "refactor auth"]))
+
+    def test_agent_print_mode_failovers_on_rate_limit(self) -> None:
+        target = self.bin_dir / "agent"
+        make_executable(
+            target,
+            textwrap.dedent(
+                """\
+                #!/usr/bin/env python3
+                import os
+                import sys
+                key = os.environ.get("CURSOR_API_KEY", "")
+                if key == "primary-key":
+                    print("Error: rate limit exceeded", file=sys.stderr)
+                    raise SystemExit(1)
+                print(f"ok:{key}")
+                """
+            ),
+        )
+        self._run("install", "agent")
+        (self.config_dir / "config.toml").write_text(
+            textwrap.dedent(
+                """\
+                [[providers.agent.accounts]]
+                name = "primary"
+                env = { CURSOR_API_KEY = "primary-key" }
+
+                [[providers.agent.accounts]]
+                name = "backup"
+                env = { CURSOR_API_KEY = "backup-key" }
+                """
+            )
+        )
+        proc = subprocess.run(
+            ["agent", "-p", "say hello"],
+            cwd=ROOT,
+            env=self.env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stdout.strip(), "ok:backup-key")
+        self.assertIn("retrying with backup", proc.stderr)
+
+    def test_agent_login_passthrough_skips_failover(self) -> None:
+        target = self.bin_dir / "agent"
+        make_executable(
+            target,
+            textwrap.dedent(
+                """\
+                #!/usr/bin/env python3
+                import sys
+                print("login:" + " ".join(sys.argv[1:]))
+                """
+            ),
+        )
+        self._run("install", "agent")
+        (self.config_dir / "config.toml").write_text(
+            textwrap.dedent(
+                """\
+                [[providers.agent.accounts]]
+                name = "primary"
+                env = { CURSOR_API_KEY = "primary-key" }
+                """
+            )
+        )
+        proc = subprocess.run(
+            ["agent", "login"],
+            cwd=ROOT,
+            env=self.env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stdout.strip(), "login:login")
+
 
 if __name__ == "__main__":
     unittest.main()

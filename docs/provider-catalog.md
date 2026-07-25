@@ -3,6 +3,44 @@
 This file is generated from `src/clifwrap/providers.toml`.
 Run `python scripts/generate_provider_catalog.py --write` after changing built-in provider metadata.
 
+## `agent`
+
+| Field | Value |
+| --- | --- |
+| `interactive_mode` | `tty-exec` |
+| `passthrough_commands` | `login`, `logout`, `status`, `whoami`, `about`, `models`, `update`, `mcp`, `plugin`, `worker`, `ls`, `resume`, `create-chat`, `generate-rule`, `rule`, `install-shell-integration`, `uninstall-shell-integration`, `help` |
+| `retry_patterns` | `rate limit`, `too many requests`, `429`, `usage limit`, `out of usage`, `spend limit`, `quota`, `not authenticated`, `unauthorized`, `authentication required`, `invalid api key`, `resource_exhausted` |
+| `never_retry_patterns` | `unknown option`, `unknown command`, `missing required argument`, `invalid argument` |
+
+### Fallback Monitor
+
+| Field | Value |
+| --- | --- |
+| `threshold` | `2` |
+| `action` | `warn` |
+| `journald` | false |
+| `syslog` | true |
+| `stderr` | true |
+
+## `cursor-agent`
+
+| Field | Value |
+| --- | --- |
+| `interactive_mode` | `tty-exec` |
+| `passthrough_commands` | `login`, `logout`, `status`, `whoami`, `about`, `models`, `update`, `mcp`, `plugin`, `worker`, `ls`, `resume`, `create-chat`, `generate-rule`, `rule`, `install-shell-integration`, `uninstall-shell-integration`, `help` |
+| `retry_patterns` | `rate limit`, `too many requests`, `429`, `usage limit`, `out of usage`, `spend limit`, `quota`, `not authenticated`, `unauthorized`, `authentication required`, `invalid api key`, `resource_exhausted` |
+| `never_retry_patterns` | `unknown option`, `unknown command`, `missing required argument`, `invalid argument` |
+
+### Fallback Monitor
+
+| Field | Value |
+| --- | --- |
+| `threshold` | `2` |
+| `action` | `warn` |
+| `journald` | false |
+| `syslog` | true |
+| `stderr` | true |
+
 ## `examplecli`
 
 | Field | Value |

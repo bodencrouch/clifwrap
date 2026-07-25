@@ -756,6 +756,61 @@ def _handle_managed_auth(app: str, provider: ProviderConfig, args: list[str]) ->
     return None
 
 
+def _is_print_mode(args: list[str]) -> bool:
+    return "-p" in args or "--print" in args
+
+
+def _wants_tty_exec(provider: ProviderConfig, args: list[str]) -> bool:
+    if provider.interactive_mode != "tty-exec":
+        return False
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        return False
+    # Headless/print mode keeps buffered failover; interactive TUIs must not be piped.
+    return not _is_print_mode(args)
+
+
+def _exec_with_account(app: str, provider: ProviderConfig, args: list[str], account: AccountConfig) -> int:
+    command = _original_command(app, provider)
+    env = dict(os.environ)
+    try:
+        env.update(_account_env(account))
+    except Exception as exc:
+        sys.stderr.write(f"[clifwrap] {account.name} configuration error: {exc}\n")
+        return 1
+    env[BYPASS_ENV] = "1"
+    env[CURRENT_ACCOUNT_ENV] = account.name
+    try:
+        _prepare_account(provider, account, env)
+    except Exception as exc:
+        sys.stderr.write(f"[clifwrap] {account.name} preparation error: {exc}\n")
+        return 1
+    set_default_account(provider.name, account.name)
+    _exec_original(app, command, args, env)
+    return 1
+
+
+def _run_tty_exec(
+    app: str,
+    provider: ProviderConfig,
+    args: list[str],
+    *,
+    account_order: list[AccountConfig] | None = None,
+    allowed_account_names: set[str] | None = None,
+) -> int:
+    if account_order is not None:
+        accounts = account_order
+        if allowed_account_names is not None:
+            accounts = [account for account in accounts if account.name in allowed_account_names]
+    else:
+        accounts = _ordered_accounts(provider, allowed_account_names)
+    if not accounts:
+        command = _original_command(app, provider)
+        env = dict(os.environ)
+        env[BYPASS_ENV] = "1"
+        _exec_original(app, command, args, env)
+    return _exec_with_account(app, provider, args, accounts[0])
+
+
 def run_app(app: str, args: list[str]) -> int:
     if os.environ.get(BYPASS_ENV) == "1":
         command = original_command_for(app)
@@ -782,14 +837,17 @@ def run_app(app: str, args: list[str]) -> int:
     allowed_account_names: set[str] | None = None
     account_order: list[AccountConfig] | None = None
     snapshots = None
-    if args and _enabled_accounts(provider) and not _requests_upstream_help(args):
+    tty_exec = _wants_tty_exec(provider, args)
+    # Interactive tty-exec may run with empty args; print/non-TTY always have args for capacity.
+    should_plan = _enabled_accounts(provider) and not _requests_upstream_help(args) and (args or tty_exec)
+    if should_plan:
         if _proactive_pick_enabled(provider):
-            if stdin_data is _STDIN_UNSET:
+            if stdin_data is _STDIN_UNSET and not tty_exec:
                 stdin_data = _capture_stdin()
             account_order, snapshots, notice = _proactive_execution_plan(provider, args)
             if notice:
                 sys.stderr.write(notice)
-        if has_capacity_control(provider):
+        if has_capacity_control(provider) and args and not tty_exec:
             if stdin_data is _STDIN_UNSET:
                 stdin_data = _capture_stdin()
             try:
@@ -814,6 +872,33 @@ def run_app(app: str, args: list[str]) -> int:
                 sys.stderr.write(f"[clifwrap] capacity unknown for {app}; continuing because policy allows it\n")
             elif decision.capacity_approved and decision.account_name:
                 allowed_account_names = {decision.account_name}
+        elif has_capacity_control(provider) and tty_exec:
+            # Interactive sessions cannot be queued mid-TUI; still honor shed by probing.
+            try:
+                decision = _admission(provider, args, None, snapshots=snapshots)
+            except (OSError, ValueError) as exc:
+                sys.stderr.write(f"[clifwrap] queue state error for {app}: {exc}\n")
+                return 74
+            if decision.action == "shed":
+                sys.stderr.write(f"[clifwrap] blocked {app}: {decision.reason}\n")
+                if decision.remediation_message:
+                    sys.stderr.write(f"[clifwrap] {decision.remediation_message}\n")
+                return 69
+            if decision.action == "queue":
+                sys.stderr.write(
+                    f"[clifwrap] capacity low for interactive {app}; starting anyway "
+                    f"(queue only applies to non-interactive print mode)\n"
+                )
+            elif decision.capacity_approved and decision.account_name:
+                allowed_account_names = {decision.account_name}
+    if tty_exec:
+        return _run_tty_exec(
+            app,
+            provider,
+            args,
+            account_order=account_order,
+            allowed_account_names=allowed_account_names,
+        )
     return _run_attempts(
         app,
         provider,

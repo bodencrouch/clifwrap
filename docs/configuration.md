@@ -45,7 +45,7 @@ Provider tables can set:
 | `retry_patterns` | Lowercased stderr/stdout snippets that trigger retry |
 | `never_retry_patterns` | Snippets that block retry even if another rule matches |
 | `retry_on_any_error` | Retry any nonzero exit unless blocked by `never_retry_patterns` |
-| `interactive_mode` | Currently `line-repl` for line-by-line wrapped shells |
+| `interactive_mode` | `line-repl` for line-by-line shells; `tty-exec` for full-screen TUIs (e.g. Cursor Agent) |
 | `status_command` | Command that returns JSON with `remaining`, `limit`, and optionally `used` |
 | `proactive_pick` | Headroom-first starting account before the first upstream call (default `true` when `status_command` or `usage` is set) |
 | `passthrough_commands` | Upstream subcommands that skip wrapper auth handling |

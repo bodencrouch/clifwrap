@@ -158,3 +158,111 @@ remediation_commands = [
   "clifwrap account list examplecli",
   "clifwrap config validate",
 ]
+
+# Cursor Agent CLI (https://cursor.com/docs/cli/overview).
+# Official install creates both `agent` (primary) and `cursor-agent` (legacy) PATH names.
+# Prefer wrapping the name that resolves on your PATH. Auth is CURSOR_API_KEY per account
+# (https://cursor.com/docs/cli/reference/authentication). Interactive TUI uses tty-exec;
+# buffered failover applies to `agent -p` / `--print` headless runs.
+[providers.agent]
+interactive_mode = "tty-exec"
+passthrough_commands = [
+  "login",
+  "logout",
+  "status",
+  "whoami",
+  "about",
+  "models",
+  "update",
+  "mcp",
+  "plugin",
+  "worker",
+  "ls",
+  "resume",
+  "create-chat",
+  "generate-rule",
+  "rule",
+  "install-shell-integration",
+  "uninstall-shell-integration",
+  "help",
+]
+retry_patterns = [
+  "rate limit",
+  "too many requests",
+  "429",
+  "usage limit",
+  "out of usage",
+  "spend limit",
+  "quota",
+  "not authenticated",
+  "unauthorized",
+  "authentication required",
+  "invalid api key",
+  "resource_exhausted",
+]
+never_retry_patterns = [
+  "unknown option",
+  "unknown command",
+  "missing required argument",
+  "invalid argument",
+]
+proactive_pick = false
+
+[providers.agent.fallback_monitor]
+threshold = 2
+action = "warn"
+journald = false
+syslog = true
+stderr = true
+
+# Legacy PATH name created by the Cursor Agent installer alongside `agent`.
+[providers.cursor-agent]
+interactive_mode = "tty-exec"
+passthrough_commands = [
+  "login",
+  "logout",
+  "status",
+  "whoami",
+  "about",
+  "models",
+  "update",
+  "mcp",
+  "plugin",
+  "worker",
+  "ls",
+  "resume",
+  "create-chat",
+  "generate-rule",
+  "rule",
+  "install-shell-integration",
+  "uninstall-shell-integration",
+  "help",
+]
+retry_patterns = [
+  "rate limit",
+  "too many requests",
+  "429",
+  "usage limit",
+  "out of usage",
+  "spend limit",
+  "quota",
+  "not authenticated",
+  "unauthorized",
+  "authentication required",
+  "invalid api key",
+  "resource_exhausted",
+]
+never_retry_patterns = [
+  "unknown option",
+  "unknown command",
+  "missing required argument",
+  "invalid argument",
+]
+proactive_pick = false
+
+[providers.cursor-agent.fallback_monitor]
+threshold = 2
+action = "warn"
+journald = false
+syslog = true
+stderr = true
