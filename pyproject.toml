@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "clifwrap"
 version = "0.3.0"
-description = "Transparent quota-aware failover and auth management for account-backed CLIs."
+description = "Failover wrapper for account-backed CLIs with optional quota gating and auth management."
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [{ name = "clifwrap maintainers" }]

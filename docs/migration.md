@@ -1,8 +1,8 @@
-# Migration to clifwrap
+# Migration from cli-fallback-wrapper
 
-The project, package, command, config directory, state directory, and environment variables were renamed to `clifwrap`.
+The project was renamed to `clifwrap`. Package name, CLI command, config paths, state paths, and env var prefix all changed.
 
-## Rename Map
+## Name map
 
 | Old | New |
 | --- | --- |
@@ -13,9 +13,9 @@ The project, package, command, config directory, state directory, and environmen
 | `~/.local/state/cli-fallback-wrapper` | `~/.local/state/clifwrap` |
 | `CLIFW_*` | `CLIFWRAP_*` |
 
-No legacy command alias is installed by default. This avoids ambiguity in shell shims and release artifacts.
+There is no legacy command alias. That avoids confusion in shell shims and release binaries.
 
-## Manual Migration
+## Steps
 
 ```bash
 mkdir -p ~/.config/clifwrap ~/.local/state/clifwrap
@@ -24,4 +24,4 @@ cp -a ~/.local/state/cli-fallback-wrapper/. ~/.local/state/clifwrap/
 clifwrap install
 ```
 
-Then replace exported `CLIFW_*` variables with `CLIFWRAP_*`.
+Then rename any exported `CLIFW_*` variables to `CLIFWRAP_*`.

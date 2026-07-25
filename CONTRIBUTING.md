@@ -1,17 +1,17 @@
 # Contributing
 
-`clifwrap` is intentionally conservative because it sits in front of real CLIs and credentials.
+Thanks for helping. `clifwrap` sits in front of real CLIs and real credentials, so changes here need a light touch.
 
-## Local Checks
+## Before you open a PR
 
-Run the same baseline checks as CI:
+Run the same checks CI runs:
 
 ```bash
 python -m pip install -e ".[dev]"
 python scripts/verify_release.py --skip-pyinstaller
 ```
 
-The same checks are also available through Nox:
+Or use Nox:
 
 ```bash
 python -m pip install -e ".[dev]"
@@ -19,7 +19,7 @@ nox
 nox -s release-verify -- --require-actionlint
 ```
 
-If you have `actionlint` installed, `verify_release.py` runs it automatically. Use `--require-actionlint` when validating workflow semantics before release.
+If you have [actionlint](https://github.com/rhysd/actionlint) installed, `verify_release.py` runs it automatically. Pass `--require-actionlint` when you want the script to fail without it.
 
 For a local PyInstaller smoke test:
 
@@ -28,15 +28,15 @@ python -m pip install -e ".[release]"
 python scripts/verify_release.py
 ```
 
-## Design Rules
+## Design expectations
 
-- Keep provider-specific behavior in `providers.toml` or user configuration, not hardcoded in generic runtime paths.
-- Keep installs idempotent. Re-running `clifwrap install` must not wrap an existing managed shim.
-- Keep uninstalls conservative. If the backup is missing or the target no longer contains the managed shim marker, fail before modifying files.
-- Preserve passthrough behavior when no managed accounts or policies apply.
-- Do not log secret values.
-- Add regression tests for stdin, retry, queue, and auth-management behavior before changing wrapper execution flow.
+- Put provider-specific behavior in `providers.toml` or user config, not in generic Python branches.
+- `clifwrap install` must be idempotent — never wrap an existing managed shim twice.
+- `clifwrap uninstall` must fail safely when the backup is missing or the target is not a managed shim.
+- With no accounts or policies configured, commands pass through unchanged.
+- Never log secret values.
+- Add regression tests for stdin handling, retry logic, queue behavior, and auth subcommands before changing execution flow.
 
-## Release Rules
+## Releases
 
-Release automation is documented in [docs/release.md](docs/release.md). Manual releases must remain prerelease until validation workflows pass and artifacts are uploaded.
+See [docs/release.md](docs/release.md). Manual GitHub releases stay marked prerelease until validation workflows finish and artifacts upload.

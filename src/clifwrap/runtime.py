@@ -550,6 +550,10 @@ def _should_passthrough_command(provider: ProviderConfig, args: list[str]) -> bo
     return True
 
 
+def _requests_upstream_help(args: list[str]) -> bool:
+    return "-h" in args or "--help" in args
+
+
 def _managed_auth_names(provider: ProviderConfig) -> set[str]:
     auth = provider.auth_management
     if not auth:
@@ -714,7 +718,7 @@ def run_app(app: str, args: list[str]) -> int:
         return _run_line_repl(app, provider)
     stdin_data: bytes | None | object = _STDIN_UNSET
     allowed_account_names: set[str] | None = None
-    if args and has_capacity_control(provider) and _enabled_accounts(provider):
+    if args and has_capacity_control(provider) and _enabled_accounts(provider) and not _requests_upstream_help(args):
         stdin_data = _capture_stdin()
         try:
             decision = _admission(provider, args, stdin_data)

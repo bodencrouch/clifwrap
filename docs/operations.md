@@ -1,10 +1,10 @@
-# Operations Runbook
+# Operations
 
-This runbook covers routine checks and recovery actions for `clifwrap` installations.
+Day-to-day checks and recovery for `clifwrap` installs.
 
-## Local Health Check
+## Health checks
 
-Run the status command before and after account or policy changes:
+Run these before and after account or policy changes:
 
 ```bash
 clifwrap config paths
@@ -15,15 +15,16 @@ clifwrap status --check
 clifwrap status --json --check
 ```
 
-`config paths` prints the resolved `CLIFWRAP_CONFIG`, `CLIFWRAP_STATE_DIR`, and `CLIFWRAP_BIN_DIR` destinations. `config validate` checks only the TOML config parser and returns nonzero for invalid config without inspecting shims or queue state.
+| Command | What it checks |
+| --- | --- |
+| `config paths` | Resolved `CLIFWRAP_CONFIG`, `CLIFWRAP_STATE_DIR`, and `CLIFWRAP_BIN_DIR` |
+| `config validate` | TOML parsing only — no shims or queue |
+| `doctor --check` | Paths, config, shim records, backups, default account pointers, queue readability |
+| `status --check` | Low fallback pool, bad queue state, recovery-hook failures, capacity below policy |
 
-`doctor` checks local paths, config parsing, installed shim records, original backups, default account pointers, and queue-state readability.
+## Account inventory
 
-`status --check` exits nonzero when a provider has low fallback capacity, an unhealthy queue, a persisted recovery-hook failure, or capacity that is below the configured policy threshold.
-
-## Account Inventory
-
-List accounts through wrapper-owned commands instead of relying on provider-specific login state:
+List accounts through wrapper commands, not upstream login state:
 
 ```bash
 clifwrap account list
@@ -32,13 +33,13 @@ searchcli logins
 scrapecli accounts
 ```
 
-Use account labels that describe ownership or purpose. Do not encode secret names or provider-specific assumptions in labels; bind secrets through env files, env refs, or command-backed lookups.
+Use labels that describe ownership or purpose. Bind secrets through env files, env refs, or command lookups — not through label names.
 
-The JSON account inventory is safe for automation logs: it includes account labels and configured key names, but not secret values.
+The JSON output is safe for automation logs: labels and key names only, no secret values.
 
-## Queue Management
+## Queue
 
-When capacity is low and policy is set to `queue`, wrapped commands are persisted under the wrapper state directory:
+When capacity is low and policy is `queue`, work is stored under the wrapper state directory:
 
 ```bash
 clifwrap queue list --json
@@ -46,35 +47,35 @@ clifwrap queue run
 clifwrap queue drop --expired
 ```
 
-`queue run` rechecks capacity before replay. If capacity is still below reserve, the item stays queued and its replay metadata is updated instead of duplicating work.
+`queue run` rechecks capacity before replay. If still below reserve, the item stays queued and replay metadata updates — nothing is duplicated.
 
-## Shim Recovery
+## Shim recovery
 
-Installs are idempotent:
+Install is idempotent:
 
 ```bash
 clifwrap install searchcli scrapecli
 ```
 
-Uninstall refuses unsafe recovery if the target is no longer a managed shim or the recorded original backup is missing:
+Uninstall fails if the target is not a managed shim or the backup is missing:
 
 ```bash
 clifwrap uninstall searchcli scrapecli
 ```
 
-If an upstream CLI was replaced manually, inspect the configured `CLIFWRAP_BIN_DIR` and state directory before forcing any filesystem changes. The safe path is to restore the original executable first, then rerun `clifwrap install`.
+If someone replaced an upstream binary by hand, check `CLIFWRAP_BIN_DIR` and the state directory before touching files. Restore the original executable first, then run `clifwrap install` again.
 
-Run `clifwrap doctor --json --check` before and after recovery so the target, backup, and managed-shim marker are verified from the wrapper's own state.
+Run `clifwrap doctor --json --check` before and after recovery to confirm target, backup, and shim marker from the wrapper's own records.
 
-## Release Verification
+## Release verification
 
-Before cutting or publishing a release, run:
+Before cutting or publishing a release:
 
 ```bash
 python -m pip install -e ".[dev,release]"
 python scripts/verify_release.py --require-actionlint
 ```
 
-The verifier checks workflow syntax, GitHub Actions linting, Ruff, pytest reports, compileall, package archives, wheel install smoke, Pages generation, and a PyInstaller binary smoke test. It removes generated artifacts unless `--keep-artifacts` is passed.
+The verifier checks workflow syntax, GitHub Actions linting, Ruff, pytest, compileall, package archives, wheel install smoke, Pages generation, and a PyInstaller binary smoke test. Generated artifacts are removed unless you pass `--keep-artifacts`.
 
-Use `--summary-json release-summary.json` when a CI job or maintainer handoff needs a compact machine-readable proof record after validation succeeds.
+Pass `--summary-json release-summary.json` when CI or a handoff needs a compact proof record after validation succeeds.

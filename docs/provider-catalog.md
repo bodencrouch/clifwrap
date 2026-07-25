@@ -48,12 +48,12 @@ Run `python scripts/generate_provider_catalog.py --write` after changing built-i
 | --- | --- |
 | `default_action` | `queue` |
 | `unknown_capacity_action` | `allow` |
-| `reserve_threshold` | `25` |
-| `default_cost` | `5` |
+| `reserve_threshold` | `5` |
+| `default_cost` | `1` |
 | `queue_retention_seconds` | `86400` |
 | `queue_max_items` | `100` |
 | `snapshot_ttl_seconds` | `60` |
-| `command_costs` | `crawl=25`, `extract=10`, `map=10`, `scrape=5`, `search=5` |
+| `command_costs` | `crawl=10`, `extract=5`, `map=2`, `scrape=1`, `search=2` |
 | `remediation_message` | `Provision additional ScrapeCLI credits or enable another configured account before replaying queued work.` |
 | `remediation_commands` | `clifwrap account list scrapecli`, `clifwrap account add scrapecli <name> --env-ref SCRAPECLI_API_KEY=ENVVAR` |
 
@@ -105,11 +105,11 @@ Run `python scripts/generate_provider_catalog.py --write` after changing built-i
 | --- | --- |
 | `default_action` | `queue` |
 | `unknown_capacity_action` | `allow` |
-| `reserve_threshold` | `25` |
-| `default_cost` | `25` |
+| `reserve_threshold` | `5` |
+| `default_cost` | `1` |
 | `queue_retention_seconds` | `86400` |
 | `queue_max_items` | `100` |
 | `snapshot_ttl_seconds` | `60` |
-| `command_costs` | `crawl=100`, `extract=50`, `map=100`, `search=25` |
+| `command_costs` | `crawl=5`, `extract=1`, `map=1`, `research=15`, `search=1` |
 | `remediation_message` | `Provision another SearchCLI key or enable another configured account before replaying queued work.` |
 | `remediation_commands` | `clifwrap account list searchcli`, `clifwrap account add searchcli <name> --env-ref SEARCHCLI_API_KEY=ENVVAR` |

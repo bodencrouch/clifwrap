@@ -1,5 +1,5 @@
 ---
-title: Quota-Aware Admission Control and Backpressure - Plan
+title: Quota-aware admission control and backpressure
 date: 2026-06-29
 type: feat
 artifact_contract: ce-unified-plan/v1
@@ -8,102 +8,85 @@ product_contract_source: ce-plan-bootstrap
 execution: code
 ---
 
-# Quota-Aware Admission Control and Backpressure - Plan
+# Quota-aware admission control and backpressure
 
-## Goal Capsule
+## Goal
 
-- **Objective:** Extend `clifwrap` from post-failure failover into pre-request quota-aware admission control that can execute, queue, or shed work before the upstream CLI spends quota or returns a retryable failure.
-- **Why now:** The wrapper already knows how to rotate accounts, monitor low fallback pools, and read provider usage. The missing piece is acting on that information before requests are sent.
-- **Authority:** This plan is the implementation authority for quota-aware scheduling and backpressure in this repo. Existing low-fallback monitoring stays in place unless a unit below explicitly expands it.
-- **Assumption:** Because the user did not answer the default low-capacity policy question, the initial implementation will be policy-driven with a conservative global default and provider or command overrides rather than one hardwired behavior.
-- **Stop conditions:** The wrapper can preflight capacity, make a documented admission decision, persist queued work when allowed, expose queue and remediation state through wrapper-owned commands, and preserve current pass-through and failover behavior for providers that do not opt into the new control plane.
+Extend `clifwrap` so it can decide *before* calling the upstream CLI whether to run, queue, or reject a command — instead of only reacting after quota is already spent or a retryable failure comes back.
+
+The wrapper already rotates accounts, watches fallback pools, and reads provider usage. This work adds acting on that data upstream of the CLI invocation.
+
+**Authority:** This plan governs quota-aware scheduling and backpressure in this repo. Existing low-fallback monitoring stays unless a unit below says otherwise.
+
+**Default policy:** Because no one picked a global default for low-capacity behavior, the first ship uses configurable policy with a safe global default and per-provider overrides — not one hardwired behavior everywhere.
+
+**Done when:** The wrapper can preflight capacity, make a documented admission decision, persist queued work, expose queue and remediation state through wrapper commands, and keep current passthrough/failover behavior for providers that do not opt in.
 
 ---
 
-## Product Contract
+## Product contract
 
 ### Summary
 
-`clifwrap` should stop waiting for provider CLIs to fail on exhausted quota before reacting. Instead, it should estimate whether a wrapped command can run against the current account pool, decide whether to execute, queue, or reject it based on policy, and tell the operator what to do next through approved provisioning paths.
+Stop waiting for provider CLIs to fail on exhausted quota. Estimate whether a wrapped command can run against the current account pool, then execute, queue, or reject based on policy. Tell the operator what to do next through approved provisioning paths.
 
-### Problem Frame
+### Problem
 
-The current wrapper reacts only after an upstream command fails or after status checks reveal a low fallback pool. That leaves three gaps:
+Today the wrapper reacts only after upstream failure or when status shows a low fallback pool. That leaves gaps:
 
-- Quota can be consumed on requests the wrapper could have predicted would fail.
-- There is no durable, generic way to defer allowed work until capacity returns.
-- Remediation is mostly operational knowledge in the user's head rather than a first-class wrapper surface.
+- Quota gets spent on requests we could have predicted would fail.
+- No durable, generic way to defer work until capacity returns.
+- Remediation lives in operators' heads, not in the wrapper.
 
-This work is cross-cutting because it changes provider config, state persistence, runtime request flow, wrapper-only commands, and health reporting.
+This touches provider config, state, runtime flow, wrapper commands, and health reporting.
 
 ### Requirements
 
-- R1. The wrapper must support provider-level pre-request admission control before the upstream CLI is executed.
-- R2. Admission behavior must stay generic in the core wrapper and be driven by declarative provider metadata plus user config and env overrides, not provider-name branches in runtime logic.
-- R3. Admission control must support at least three outcomes: execute now, queue for later execution, or fail fast with a clear user-facing reason.
-- R4. Capacity evaluation must use existing provider usage lookups when available, combine them with configurable cost estimation, and behave conservatively when usage is stale, unavailable, or unknown.
-- R5. Queued work must be durable across process exits, idempotently replayable, and manageable through wrapper-owned CLI commands.
-- R6. Status and health surfaces must expose low-capacity state, queued backlog, and team-approved remediation paths without automating identity or account creation.
-- R7. Existing failover, low-fallback alerts, interactive pass-through behavior, install idempotency, and non-configured-provider passthrough must continue to work.
-- R8. ScrapeCLI and SearchCLI must both be expressible through the same control plane, even if their cost estimation rules differ.
+- R1. Pre-request admission control before the upstream CLI runs.
+- R2. Generic core driven by provider metadata + user config + env overrides — no provider-name branches in runtime.
+- R3. At least three outcomes: execute now, queue for later, fail fast with a clear reason.
+- R4. Capacity evaluation uses existing usage lookups, configurable cost estimates, and conservative behavior when usage is stale or unknown.
+- R5. Queued work survives process exits, replays idempotently, and is manageable through wrapper CLI commands.
+- R6. Status and health expose low capacity, queue backlog, and approved remediation paths — without automating account creation.
+- R7. Existing failover, low-fallback alerts, interactive passthrough, install idempotency, and passthrough for unconfigured providers keep working.
+- R8. ScrapeCLI and SearchCLI both use the same control plane even if cost rules differ.
 
-### Success Criteria
+### Success criteria
 
 - Wrapped commands can be blocked or deferred before upstream execution when projected capacity is insufficient.
-- Queueable work can be listed, replayed, and dropped without editing state files by hand.
-- Health output explains whether a provider is unhealthy because of low fallback pool, low capacity, expired queued work, or failed recovery hooks.
-- Provider-specific rollout only requires metadata or config changes for policy and estimation, not new hardcoded runtime branches.
+- Queueable work can be listed, replayed, and dropped without hand-editing state files.
+- Health output distinguishes low fallback pool, low capacity, expired queued work, and failed recovery hooks.
+- New providers need only metadata or config changes — no new hardcoded runtime branches.
 
-### Scope Boundaries
+### Scope
 
-#### In Scope
+**In scope:** Preflight capacity checks, execute/queue/shed policy, durable queue state and commands, status/remediation output, ScrapeCLI and SearchCLI metadata + tests.
 
-- Preflight capacity checks based on provider usage and estimated command cost.
-- Declarative policy for execute, queue, and shed behavior.
-- Durable wrapper-managed queue state and queue-management commands.
-- Status and remediation output tied to approved provisioning instructions.
-- ScrapeCLI and SearchCLI metadata updates plus generic tests.
+**Follow-up (not this ship):** Background daemons that drain queues without an explicit command; billing parity for every subcommand; automatic account provisioning.
 
-#### Deferred to Follow-Up Work
+**Out of scope:** Replacing the failover engine, rewriting auth-management flows, building a hosted control plane.
 
-- Automatic background daemons or long-lived workers that continuously drain queues without an explicit wrapper command or external scheduler.
-- Fine-grained provider billing parity for every possible subcommand if an initial conservative estimator is enough to ship a safe control plane.
-- Automatic provider provisioning, account creation, or any identity-generation workflow.
-
-#### Out of Scope
-
-- Replacing the existing failover engine.
-- Rewriting provider auth-management flows.
-- Building a hosted control plane or remote queue service.
-
-### Assumptions and Dependencies
+### Assumptions
 
 - Provider usage endpoints remain the source of truth for remaining capacity.
-- Existing wrapper state under `~/.local/state/clifwrap/` remains the correct persistence root for new queue and capacity data.
-- Users who need automatic draining can invoke a wrapper command from cron, systemd timers, or another approved scheduler rather than relying on an in-process daemon.
+- Wrapper state under `~/.local/state/clifwrap/` stays the persistence root for queue and capacity data.
+- Users who want automatic draining can call wrapper commands from cron, systemd timers, or another scheduler.
 
 ---
 
-## Planning Contract
+## Technical decisions
 
-### Key Technical Decisions
+- **KTD1.** New scheduling module instead of more policy code in `runtime.py`. Failover, status, and managed-auth already live there; admission and queues add enough state to warrant a separate boundary.
 
-- KTD1. Introduce a dedicated scheduling boundary instead of embedding more policy code directly into `src/clifwrap/runtime.py`.
-  Rationale: `runtime.py` already owns failover, status, and managed-auth behavior. Admission control and queue handling add enough state and branching to justify a separate module while still keeping the runtime entrypoint thin.
+- **KTD2.** Policy + estimates, not exact billing simulation. ScrapeCLI and SearchCLI expose usage but real billing varies by command shape. Conservative estimates + unknown-capacity policy beat pretending we mirror provider billing.
 
-- KTD2. Model quota-aware control as declarative policy plus provider estimates, not as exact billing simulation.
-  Rationale: ScrapeCLI and SearchCLI expose usage, but their real billing behavior can vary by command shape. A conservative estimate plus an unknown-capacity policy is safer and more maintainable than pretending the wrapper can perfectly mirror provider billing.
+- **KTD3.** Queue draining through explicit CLI commands, not a daemon. Idempotent, testable, low carry cost; schedulers can automate drains.
 
-- KTD3. Make queue draining explicit and wrapper-owned through CLI commands instead of introducing a daemon.
-  Rationale: This keeps the first release idempotent, testable, and low-carrying-cost while still enabling users to automate drains with existing schedulers.
+- **KTD4.** Remediation is human-approved and config-driven. Surface docs, commands, and messages — do not auto-create accounts.
 
-- KTD4. Keep remediation human-approved and declarative.
-  Rationale: The wrapper can surface provisioning docs, commands, and messages, but it should not automate identity or account creation when capacity is low.
+- **KTD5.** Keep low-fallback monitoring; add capacity health alongside it. Low fallback count and low usable quota are related but distinct signals.
 
-- KTD5. Preserve existing low-fallback monitoring and layer capacity health alongside it.
-  Rationale: Low fallback count and low usable quota are related but distinct failure modes. Operators need both signals rather than a merged opaque health state.
-
-### High-Level Technical Design
+### Flow
 
 ```mermaid
 flowchart TD
@@ -130,150 +113,94 @@ stateDiagram-v2
   Running --> Failed: non-queueable or non-retryable failure
 ```
 
-### Plan-Specific Shape
+Admission runs before `_run_attempts()` invokes upstream. Policy is provider-configurable with per-command overrides and a separate unknown-capacity rule. Queue persistence uses state files plus wrapper-only CLI subcommands.
 
-- Admission control will be inserted before `_run_attempts()` invokes the upstream command.
-- Capacity policy will be provider-configurable, with optional per-command overrides and a distinct unknown-capacity rule.
-- Queue persistence and replay will use wrapper state files plus wrapper-only CLI subcommands rather than upstream provider commands.
+### Open questions (deferred)
 
-### Open Questions
+- Global default: `queue` vs `shed` for commands without an explicit override. Ship configurable; do not block on one default.
+- Whether queue backlog affects `status --check` immediately or only past age/count thresholds.
 
-- Deferred. Whether the initial global default should prefer `queue` or `shed` for commands without an explicit override. The implementation should make this configurable and documented rather than blocking the feature on one default.
-- Deferred. Whether queue backlog should affect `clifwrap status --check` immediately or only when age and count thresholds are exceeded.
+### Risks
 
-### System-Wide Impact
+| Risk | Mitigation |
+| --- | --- |
+| Bad estimates over-block work | Unknown-capacity policy, per-command overrides, conservative metadata, test allow and block paths |
+| Queue replay duplicates intent or drifts from env | Persist argv, provider, admission metadata, timestamps, replay count; validate before replay; drop/inspect commands |
+| Runtime complexity breaks failover | New module; call existing attempt engine only after admission; extend tests, do not replace |
+| Remediation becomes provider hardcoding | Hints and commands in config/metadata; generic render helpers |
 
-- **CLI UX:** Wrapped commands gain new fast-fail and deferred-execution paths, so messaging must distinguish capacity policy from retryable upstream failure.
-- **State lifecycle:** The wrapper will persist queue items, capacity snapshots, and possibly replay metadata in addition to default-account and alert state.
-- **Operations:** Teams gain a supported place to declare provisioning guidance instead of relying on ad hoc knowledge.
-- **Provider parity:** ScrapeCLI and SearchCLI stay first-class examples, but the implementation must remain extensible for additional providers with different usage semantics.
+### Sources
 
-### Risks and Mitigations
-
-- **Risk:** Incorrect estimates may over-block useful work.
-  **Mitigation:** Provide explicit unknown-capacity and per-command override policy, start with conservative provider metadata, and test both allow and block paths.
-
-- **Risk:** Queue replay can duplicate user intent or drift from the original environment.
-  **Mitigation:** Persist argv, selected provider, rendered admission metadata, timestamps, and replay count; validate queue items before replay; expose drop and inspect commands.
-
-- **Risk:** Runtime complexity regresses current failover behavior.
-  **Mitigation:** Keep admission logic in a new module, call into the existing attempt engine only after admission passes, and extend current wrapper tests rather than replacing them.
-
-- **Risk:** Remediation surfaces become provider-specific hardcoding in core paths.
-  **Mitigation:** Put provisioning hints, commands, and docs in config and provider metadata, then render them through generic helpers.
-
-### Sources and Research
-
-- SearchCLI docs confirm Bearer-token auth and a documented `GET /usage` endpoint suitable for preflight capacity checks.
-- ScrapeCLI CLI docs confirm API-key-driven auth and CLI-visible credit usage, aligning with the existing wrapper usage endpoint configuration.
-- Existing repo patterns already cover state persistence, env-driven provider overrides, failover messaging, and health reporting in `src/clifwrap/runtime.py`, `src/clifwrap/state.py`, and `tests/test_wrapper.py`.
+- SearchCLI: Bearer auth, documented `GET /usage` for preflight.
+- ScrapeCLI: API-key auth, CLI-visible credit usage, aligns with existing usage config.
+- Repo patterns: state in `state.py`, env overrides, failover messaging, health in `runtime.py`; tests in `tests/test_wrapper.py`.
 
 ---
 
-## Implementation Units
+## Implementation units
 
-### U1. Add Declarative Capacity-Control Config
+### U1. Capacity-control config
 
-- **Goal:** Introduce a generic config model for admission policy, cost estimation, queue behavior, and remediation surfaces.
-- **Requirements:** R1, R2, R3, R4, R6, R8
-- **Dependencies:** None
-- **Files:** `src/clifwrap/config.py`, `src/clifwrap/providers.toml`, `src/clifwrap/__main__.py`, `README.md`, `tests/test_wrapper.py`
-- **Approach:** Add a provider-level capacity-control section that can be created from catalog defaults, user config, and env overrides. The shape should cover default action, unknown-capacity action, reserve threshold, queue retention, provisioning hints, and per-command estimated cost overrides.
-- **Patterns to follow:** Follow the existing `fallback_monitor`, `auth_management`, and `usage` config layering pattern in `src/clifwrap/config.py`.
-- **Test scenarios:**
-  - Happy path: loading a provider with a capacity-control block yields the expected parsed defaults and provider override values.
-  - Happy path: env overrides replace configured capacity policy fields without disturbing unrelated provider config.
-  - Edge case: a provider with no capacity-control block stays backward-compatible and behaves like pure passthrough to the existing runtime path.
-  - Error path: invalid action names, negative thresholds, or malformed command-cost entries fail config loading with targeted validation errors.
-  - Integration: built-in `searchcli` and `scrapecli` catalog entries resolve into capacity-control config without hardcoded special branches in runtime.
-- **Verification:** A reader can inspect one provider config path and see that policy, estimation, and remediation are all declared without adding provider-name branches to the config layer.
+Add a generic config model for admission policy, cost estimation, queue behavior, and remediation.
 
-### U2. Build the Admission and Capacity Engine
+**Files:** `config.py`, `providers.toml`, `__main__.py`, `README.md`, `tests/test_wrapper.py`
 
-- **Goal:** Add a reusable preflight engine that converts usage snapshots and command estimates into execute, queue, or shed decisions.
-- **Requirements:** R1, R2, R3, R4, R7, R8
-- **Dependencies:** U1
-- **Files:** `src/clifwrap/runtime.py`, `src/clifwrap/state.py`, `src/clifwrap/scheduling.py`, `tests/test_wrapper.py`
-- **Approach:** Introduce a new scheduling module responsible for reading usage snapshots, estimating command cost, ranking candidate accounts, and returning an admission decision object that runtime can act on. Persist enough state to avoid needless repeated usage calls and to record why a command was blocked or deferred.
-- **Execution note:** Start with unit-style tests around the decision engine before threading it into `run_app()`.
-- **Patterns to follow:** Mirror the existing `_usage_status()` and `_status_snapshot()` helper style, but keep new policy evaluation out of `runtime.py` where possible.
-- **Test scenarios:**
-  - Happy path: when remaining capacity comfortably exceeds the estimated cost plus reserve, the engine returns `execute` for the active or best candidate account.
-  - Happy path: when the active account is low but another enabled account has capacity, the engine chooses execution on the alternate account rather than queuing.
-  - Edge case: when usage is unavailable and provider policy says `allow`, the engine permits execution and records an unknown-capacity reason.
-  - Edge case: when usage is unavailable and provider policy says `queue` or `shed`, the engine returns the configured non-execute outcome without calling upstream.
-  - Error path: malformed or stale usage snapshot data is treated as unknown capacity rather than causing a traceback.
-  - Integration: admission decisions preserve current account ordering and default-account semantics expected by failover once execution begins.
-- **Verification:** The engine can be exercised entirely in tests with mocked usage payloads and produces stable decision objects that runtime can consume without inspecting provider names.
+Follow the existing `fallback_monitor`, `auth_management`, and `usage` layering in `config.py`.
 
-### U3. Add Durable Queue Persistence and Queue Commands
+**Verify:** One provider config path shows policy, estimation, and remediation without provider-name branches in the config layer.
 
-- **Goal:** Make deferred work durable and operator-manageable through wrapper-owned commands.
-- **Requirements:** R3, R5, R6, R7
-- **Dependencies:** U1, U2
-- **Files:** `src/clifwrap/state.py`, `src/clifwrap/scheduling.py`, `src/clifwrap/__main__.py`, `README.md`, `tests/test_wrapper.py`
-- **Approach:** Persist queue items under wrapper state with enough metadata to replay safely: provider, argv, enqueue time, decision reason, replay count, and queue policy snapshot. Add wrapper commands such as `clifwrap queue list`, `clifwrap queue run`, and `clifwrap queue drop`, with JSON output where it materially helps automation.
-- **Patterns to follow:** Follow the existing wrapper-owned `account` and `status` subcommand model in `src/clifwrap/__main__.py` and state-file JSON persistence in `src/clifwrap/state.py`.
-- **Test scenarios:**
-  - Happy path: a queueable low-capacity command is persisted and `clifwrap queue list` shows provider, age, and reason.
-  - Happy path: `clifwrap queue run` replays an item once capacity becomes available and removes it on success.
-  - Edge case: replaying a queued item that is still blocked by policy leaves it pending and increments replay metadata without duplicating entries.
-  - Edge case: expired queue items are reported distinctly and can be dropped without manual file edits.
-  - Error path: malformed queue state is surfaced as a wrapper error instead of silently deleting data.
-  - Integration: queue commands work without an installed shim because they are wrapper-owned `clifwrap` commands, not provider pass-throughs.
-- **Verification:** An operator can inspect, replay, and drop queued work using wrapper commands alone, and queued items survive process restarts.
+### U2. Admission and capacity engine
 
-### U4. Integrate Admission Decisions into Wrapped Runtime and Health Surfaces
+Preflight engine: usage snapshots + command estimates → execute, queue, or shed.
 
-- **Goal:** Thread the new admission engine through the wrapped runtime, status output, and health checks without regressing existing failover and low-fallback behavior.
-- **Requirements:** R1, R3, R6, R7
-- **Dependencies:** U2, U3
-- **Files:** `src/clifwrap/runtime.py`, `src/clifwrap/__main__.py`, `src/clifwrap/providers.toml`, `README.md`, `tests/test_wrapper.py`
-- **Approach:** Run admission checks after managed-auth handling but before passthrough upstream execution. Extend status snapshots with capacity-policy, queue backlog, and remediation fields. Decide how `status --check` reports low-capacity and queued-work health without conflating those states with low fallback count.
-- **Patterns to follow:** Preserve the current `run_app()` control flow ordering, `_snapshot_unhealthy()` health signal pattern, and human-plus-JSON dual output in status rendering.
-- **Test scenarios:**
-  - Happy path: a provider with healthy capacity still reaches the existing `_run_attempts()` path unchanged.
-  - Happy path: a shed decision returns a stable nonzero exit code and a user-facing remediation message without invoking the upstream binary.
-  - Edge case: passthrough commands such as `scrapecli login` still bypass admission logic when they are true upstream auth flows.
-  - Edge case: low-fallback alerts and low-capacity alerts can both surface for the same provider without duplicating or corrupting messages.
-  - Error path: if queue persistence fails during a `queue` decision, the wrapper returns a clear error instead of pretending the work was safely deferred.
-  - Integration: `clifwrap status --json --check` reflects queue backlog and capacity health in a machine-readable way while preserving current low-fallback semantics.
-- **Verification:** Running the wrapper on configured providers yields a clear, test-backed separation between execute, queue, shed, and existing retry-after-failure paths.
+**Files:** `runtime.py`, `state.py`, `scheduling.py`, `tests/test_wrapper.py`
 
-### U5. Ship Provider Defaults, Remediation Surfaces, and Regression Coverage
+Start with unit tests on the decision engine before threading into `run_app()`.
 
-- **Goal:** Deliver the first provider rollouts, documentation, and regression tests needed to make the control plane usable and trustworthy.
-- **Requirements:** R2, R4, R6, R7, R8
-- **Dependencies:** U1, U2, U3, U4
-- **Files:** `src/clifwrap/providers.toml`, `README.md`, `tests/test_wrapper.py`
-- **Approach:** Add conservative ScrapeCLI and SearchCLI default policies, documented command-cost assumptions, and provider-specific remediation fields that point to approved operator actions. Expand tests to cover backward compatibility, provider metadata loading, and user-visible docs/examples.
-- **Patterns to follow:** Keep provider behavior in `src/clifwrap/providers.toml` and document user-facing flows in `README.md`, matching the existing wrapper philosophy.
-- **Test scenarios:**
-  - Happy path: ScrapeCLI and SearchCLI built-in metadata load with queue or shed policies and no direct runtime provider-name branching.
-  - Edge case: removing the built-in provider metadata leaves user-defined providers still able to opt into the feature through config alone.
-  - Error path: documented remediation commands or URLs missing from provider config degrade to a generic message rather than crashing output.
-  - Integration: existing install-idempotency, low-fallback monitor, usage-timeout, and status tests continue to pass alongside the new scheduling cases.
-  - Integration: README examples for queueing, shedding, and remediation match the shipped config shape and wrapper commands.
-- **Verification:** The repo ships one coherent user story for ScrapeCLI and SearchCLI plus generic extension points for future providers, with regression tests proving current behavior still holds.
+**Verify:** Engine runs entirely in tests with mocked usage; stable decision objects for runtime without inspecting provider names.
+
+### U3. Queue persistence and commands
+
+Durable queue under wrapper state; `clifwrap queue list`, `run`, `drop` with JSON where useful.
+
+**Files:** `state.py`, `scheduling.py`, `__main__.py`, `README.md`, `tests/test_wrapper.py`
+
+**Verify:** Inspect, replay, and drop queued work through wrapper commands alone; items survive restarts.
+
+### U4. Runtime and health integration
+
+Admission after managed-auth, before upstream execution. Extend status with capacity, backlog, remediation. `status --check` reports low capacity and queued work without conflating with low fallback count.
+
+**Files:** `runtime.py`, `__main__.py`, `providers.toml`, `README.md`, `tests/test_wrapper.py`
+
+**Verify:** Clear separation between execute, queue, shed, and existing retry-after-failure paths.
+
+### U5. Provider defaults, remediation, regression coverage
+
+Conservative ScrapeCLI and SearchCLI policies, documented cost assumptions, remediation fields pointing to operator actions. Tests for backward compatibility and metadata loading.
+
+**Files:** `providers.toml`, `README.md`, `tests/test_wrapper.py`
+
+**Verify:** One coherent user story for both providers plus generic extension points; legacy behavior tests still pass.
 
 ---
 
-## Verification Contract
+## Verification
 
-| Gate | Scope | Expectation |
-|---|---|---|
-| `pytest tests/test_wrapper.py` | Full feature | Covers config parsing, admission decisions, queue lifecycle, runtime integration, status health, and backward compatibility. |
-| Focused wrapper tests | During implementation | New tests should isolate config, admission, queue, and status behavior so failures point to one extension seam at a time. |
-| Manual smoke via `clifwrap status` and wrapper-owned queue commands | Final proof | Confirms the shipped CLI surface matches the documented user flow without relying on direct state-file edits. |
-| Legacy behavior regression | Final proof | Existing failover, low-fallback, auth-management, passthrough login, and install idempotency flows still pass unchanged. |
+| Gate | Expectation |
+| --- | --- |
+| `pytest tests/test_wrapper.py` | Config, admission, queue lifecycle, runtime integration, status health, backward compatibility |
+| Focused tests during work | Isolate config, admission, queue, status so failures point to one seam |
+| Manual smoke | `clifwrap status` and queue commands match documented flow without state-file edits |
+| Legacy regression | Failover, low-fallback, auth-management, passthrough login, install idempotency unchanged |
 
 ---
 
-## Definition of Done
+## Definition of done
 
-- The repo contains a generic capacity-control model, a reusable admission engine, durable queue state, and queue-management CLI commands.
-- ScrapeCLI and SearchCLI can both use the new control plane without core runtime branches that special-case provider labels.
-- Status output and `--check` surface low-capacity and queued-work health alongside existing low-fallback and recovery-hook signals.
-- Tests cover healthy execution, alternate-account execution, queue, shed, unknown capacity, replay, expiry, and backward-compatibility cases.
-- README documentation explains how to configure policy, inspect backlog, replay queued work, and surface approved provisioning guidance.
-- Any abandoned scheduling experiments or duplicate policy paths introduced during implementation are removed before the work is considered complete.
+- Generic capacity-control model, admission engine, durable queue state, queue CLI commands.
+- ScrapeCLI and SearchCLI on the new control plane without provider-label branches in core runtime.
+- `status` and `--check` surface low capacity and queued work alongside low-fallback and recovery-hook signals.
+- Tests cover healthy execution, alternate-account execution, queue, shed, unknown capacity, replay, expiry, backward compatibility.
+- README explains policy config, backlog inspection, replay, and provisioning guidance.
+- Remove abandoned scheduling experiments or duplicate policy paths before calling the work complete.

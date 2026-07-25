@@ -1,39 +1,39 @@
-# Security Policy
+# Security
 
-`clifwrap` sits in front of CLIs that may use account-scoped API keys, OAuth tokens, or browser-login credentials. Treat wrapper configuration, state, logs, and release artifacts as security-sensitive.
+`clifwrap` wraps CLIs that may hold API keys, OAuth tokens, or browser-login credentials. Treat config, state files, logs, and release artifacts like you would any local secret store.
 
-## Supported Versions
+## Supported versions
 
-Until the project reaches `1.0`, only the latest released version is supported for security fixes.
+Until `1.0`, only the latest release gets security fixes.
 
-## Automated Analysis
+## Automated checks
 
-The repository runs CodeQL analysis for Python on pushes, pull requests, a weekly schedule, and manual dispatch. Findings should be triaged before a release is marked production-ready.
+The repo runs CodeQL on Python for pushes, pull requests, a weekly schedule, and manual runs. Triage findings before calling a release production-ready.
 
-Pull requests also run dependency review and fail when dependency changes introduce high-severity vulnerable packages.
+Pull requests also run dependency review and fail when a dependency change introduces a high-severity vulnerability.
 
-Dependabot opens grouped weekly update pull requests for Python dependencies and GitHub Actions so security and platform patches flow through the same reviewed CI path as source changes.
+Dependabot opens grouped weekly PRs for Python and GitHub Actions dependencies.
 
-## Reporting a Vulnerability
+## Report a vulnerability
 
-Report suspected vulnerabilities through GitHub private vulnerability reporting or GitHub Security Advisories for `github.com/th3w1zard1/clifwrap`.
+Use [GitHub private vulnerability reporting](https://github.com/th3w1zard1/clifwrap/security/advisories/new) or GitHub Security Advisories for [github.com/th3w1zard1/clifwrap](https://github.com/th3w1zard1/clifwrap).
 
-If the GitHub repository is not available yet, contact the maintainers privately through the same trusted channel used to receive release artifacts. Do not open a public issue with secret values, tokens, or exploit details.
+If the repo is unavailable, contact maintainers through the same private channel you use for release coordination. Do not open a public issue with tokens, keys, or exploit steps.
 
-## Secret Handling Expectations
+## Secrets in config and logs
 
 - Do not commit API keys, OAuth tokens, browser-login credentials, or generated env files.
-- Prefer `env:` references, `env_files`, or command-backed secret lookups over literal config values.
-- `clifwrap account list --json`, `clifwrap doctor --json`, and release verification are designed not to print secret values.
-- Upstream provider CLIs may still print their own diagnostics; review logs before sharing them.
+- Prefer `env:` references, `env_files`, or command-backed lookups over literal values in config.
+- `clifwrap account list --json`, `clifwrap doctor --json`, and release verification are written not to print secret values.
+- Upstream CLIs may still print their own diagnostics — review logs before sharing them.
 
-## Local State
+## Local state
 
-By default, config and state live under:
+By default:
 
 ```text
 ~/.config/clifwrap/config.toml
 ~/.local/state/clifwrap/
 ```
 
-The state directory can contain default-account choices, queue metadata, usage-cache data, recovery-hook failures, and original executable backups for installed shims. Protect it with the same care as other local developer credentials and tooling state.
+The state directory can hold default-account choices, queue metadata, usage cache, recovery-hook errors, and backups of original executables. Lock it down like any other local credential store.

@@ -1,8 +1,8 @@
 # clifwrap
 
-`clifwrap` is a transparent wrapper for CLIs that depend on account-scoped credentials, quotas, or rate limits. It installs reversible shims, applies declarative account configuration, checks capacity before requests, and fails over only when policy allows it.
+`clifwrap` wraps account-backed CLIs — the ones where quota, rate limits, and credentials get in the way. It installs reversible shims, reads account config from TOML, checks capacity before requests when you enable that, and fails over to the next account when policy allows.
 
-Start with:
+## Quick start
 
 ```bash
 pipx install clifwrap
@@ -11,14 +11,14 @@ clifwrap account add searchcli primary --env-file ~/.config/secrets.env --env-re
 clifwrap install searchcli
 ```
 
-Core documentation:
+## Documentation
 
 - [Configuration](configuration.md)
 - [CLI reference](cli-reference.md)
 - [Built-in provider catalog](provider-catalog.md)
-- [Migration to clifwrap](migration.md)
+- [Migration from cli-fallback-wrapper](migration.md)
 - [Operations runbook](operations.md)
 - [Release process](release.md)
 - [Research notes](RESEARCH.md)
 
-Project status, pytest reports, JUnit XML, release-summary JSON, and rendered docs are published from CI to GitHub Pages.
+CI publishes pytest reports, JUnit XML, release summaries, and rendered docs to GitHub Pages.
