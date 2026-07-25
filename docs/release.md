@@ -53,10 +53,10 @@ The verifier also enforces workflow contracts that are easy to break by accident
 
 [release-please](https://github.com/googleapis/release-please) owns version bumps, changelog updates, tags, and GitHub release creation from conventional commits.
 
-When release-please creates a GitHub release, the workflow gates it before users should treat it as stable:
+When release-please creates a GitHub release, the Release Please workflow immediately gates that release through validation before users should treat it as stable:
 
-1. Mark the release `prerelease`.
-2. Dispatch `release.yml` with the created tag.
+1. marks the created release as `prerelease`.
+2. dispatches `release.yml` with the created tag.
 3. Run tests, build Python distributions, build platform binaries, publish checksums and `RELEASE-MANIFEST.json`.
 4. Clear `prerelease` only after every required job succeeds.
 
