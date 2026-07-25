@@ -18,7 +18,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / "dist"
-RELEASE_MANIFEST_SCHEMA_URL = "https://th3w1zard1.github.io/clifwrap/schemas/release-manifest.v1.json"
+RELEASE_MANIFEST_SCHEMA_URL = "https://bodencrouch.github.io/clifwrap/schemas/release-manifest.v1.json"
 RELEASE_MANIFEST_SCHEMA = ROOT / "docs" / "schemas" / "release-manifest.v1.json"
 
 

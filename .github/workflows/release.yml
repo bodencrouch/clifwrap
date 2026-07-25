@@ -232,7 +232,7 @@ jobs:
 
           artifacts = sorted(Path(".").glob("clifwrap-*"))
           manifest = {
-              "schema": "https://th3w1zard1.github.io/clifwrap/schemas/release-manifest.v1.json",
+              "schema": "https://bodencrouch.github.io/clifwrap/schemas/release-manifest.v1.json",
               "project": "clifwrap",
               "tag": os.environ["TAG"],
               "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),

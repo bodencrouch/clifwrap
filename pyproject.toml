@@ -27,10 +27,10 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://th3w1zard1.github.io/clifwrap"
-Repository = "https://github.com/th3w1zard1/clifwrap"
-Issues = "https://github.com/th3w1zard1/clifwrap/issues"
-Documentation = "https://th3w1zard1.github.io/clifwrap"
+Homepage = "https://bodencrouch.github.io/clifwrap"
+Repository = "https://github.com/bodencrouch/clifwrap"
+Issues = "https://github.com/bodencrouch/clifwrap/issues"
+Documentation = "https://bodencrouch.github.io/clifwrap"
 
 [project.scripts]
 clifwrap = "clifwrap.__main__:main"

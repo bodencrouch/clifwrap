@@ -16,7 +16,7 @@ Dependabot opens grouped weekly PRs for Python and GitHub Actions dependencies.
 
 ## Report a vulnerability
 
-Use [GitHub private vulnerability reporting](https://github.com/th3w1zard1/clifwrap/security/advisories/new) or GitHub Security Advisories for [github.com/th3w1zard1/clifwrap](https://github.com/th3w1zard1/clifwrap).
+Use [GitHub private vulnerability reporting](https://github.com/bodencrouch/clifwrap/security/advisories/new) or GitHub Security Advisories for [github.com/bodencrouch/clifwrap](https://github.com/bodencrouch/clifwrap).
 
 If the repo is unavailable, contact maintainers through the same private channel you use for release coordination. Do not open a public issue with tokens, keys, or exploit steps.
 

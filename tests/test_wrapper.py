@@ -430,7 +430,7 @@ class WrapperTests(unittest.TestCase):
 
     def test_release_manifest_schema_matches_manifest_url(self) -> None:
         schema = json.loads(RELEASE_MANIFEST_SCHEMA.read_text())
-        self.assertEqual(schema["$id"], "https://th3w1zard1.github.io/clifwrap/schemas/release-manifest.v1.json")
+        self.assertEqual(schema["$id"], "https://bodencrouch.github.io/clifwrap/schemas/release-manifest.v1.json")
         self.assertEqual(schema["properties"]["schema"]["const"], schema["$id"])
         self.assertEqual(schema["properties"]["project"]["const"], "clifwrap")
         self.assertIn("artifacts", schema["required"])

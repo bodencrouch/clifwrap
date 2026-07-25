@@ -1,6 +1,6 @@
 # clifwrap
 
-[![CI](https://github.com/th3w1zard1/clifwrap/actions/workflows/ci.yml/badge.svg)](https://github.com/th3w1zard1/clifwrap/actions/workflows/ci.yml)
+[![CI](https://github.com/bodencrouch/clifwrap/actions/workflows/ci.yml/badge.svg)](https://github.com/bodencrouch/clifwrap/actions/workflows/ci.yml)
 
 `clifwrap` puts a thin shim in front of CLIs like `searchcli` and `scrapecli`. When one account hits a quota wall, rate limit, or auth error, the wrapper retries the same command on your next configured account.
 
@@ -323,6 +323,6 @@ scrapecli search "example"
 
 ## Releases
 
-Repo: [github.com/th3w1zard1/clifwrap](https://github.com/th3w1zard1/clifwrap). Docs and test reports: [th3w1zard1.github.io/clifwrap](https://th3w1zard1.github.io/clifwrap/).
+Repo: [github.com/bodencrouch/clifwrap](https://github.com/bodencrouch/clifwrap). Docs and test reports: [bodencrouch.github.io/clifwrap](https://bodencrouch.github.io/clifwrap/).
 
 Releases are cut by release-please. New GitHub releases start as prerelease while CI runs tests, builds PyInstaller binaries, uploads artifacts, and writes `SHA256SUMS` and `RELEASE-MANIFEST.json`. The release is marked stable only after those jobs pass.

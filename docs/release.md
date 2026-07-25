@@ -18,7 +18,7 @@ CI uses the same Nox sessions as `noxfile.py` so local and hosted runs stay alig
 
 Release Please PRs get an extra **Release PR Validation** workflow. GitHub sometimes skips ordinary PR workflows when a bot token updates the release branch, so a narrow `pull_request_target` job validates same-repo `github-actions[bot]` release-please branches. The Release Please workflow also dispatches validation against the current release-PR head SHA after it updates an existing PR. Both paths check out the target SHA with `persist-credentials: false`, run the full Python matrix, and keep write permissions out of the job.
 
-The Pages workflow builds an HTML pytest report, JUnit XML, rendered docs, schema files, and `release-summary.json`. Public repos deploy to [th3w1zard1.github.io/clifwrap](https://th3w1zard1.github.io/clifwrap/). Private repos upload `site/` as an Actions artifact instead.
+The Pages workflow builds an HTML pytest report, JUnit XML, rendered docs, schema files, and `release-summary.json`. Public repos deploy to [bodencrouch.github.io/clifwrap](https://bodencrouch.github.io/clifwrap/). Private repos upload `site/` as an Actions artifact instead.
 
 CodeQL runs on pushes, PRs, weekly schedule, and manual dispatch when code scanning is enabled. Private repos without GitHub Advanced Security skip the scan rather than failing every push.
 
@@ -43,7 +43,7 @@ nox -s release-verify -- --require-actionlint
 
 Install [actionlint](https://github.com/rhysd/actionlint) locally and pass `--require-actionlint` to fail when semantic workflow linting cannot run. CI downloads and runs actionlint automatically.
 
-The local verifier writes and validates `dist/SHA256SUMS` and `dist/RELEASE-MANIFEST.json` before cleanup. The manifest schema is in `docs/schemas/release-manifest.v1.json` and is published at [release-manifest.v1.json](https://th3w1zard1.github.io/clifwrap/schemas/release-manifest.v1.json).
+The local verifier writes and validates `dist/SHA256SUMS` and `dist/RELEASE-MANIFEST.json` before cleanup. The manifest schema is in `docs/schemas/release-manifest.v1.json` and is published at [release-manifest.v1.json](https://bodencrouch.github.io/clifwrap/schemas/release-manifest.v1.json).
 
 Pass `--summary-json <path>` for a JSON proof summary after all checks pass (timestamps, platform, completed check names, artifact names).
 
