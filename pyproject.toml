@@ -11,7 +11,7 @@ requires-python = ">=3.11"
 authors = [{ name = "clifwrap maintainers" }]
 license = "MIT"
 license-files = ["LICENSE"]
-keywords = ["cli", "failover", "rate-limit", "quota", "searchcli", "scrapecli"]
+keywords = ["cli", "failover", "rate-limit", "quota", "wrapper", "multi-account"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
