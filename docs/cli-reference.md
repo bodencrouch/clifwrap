@@ -218,12 +218,17 @@ options:
 ## `clifwrap doctor`
 
 ```text
-usage: clifwrap doctor [-h] [--json] [--check]
+usage: clifwrap doctor [-h] [--json] [--check] [--provider PROVIDER] [--probe] [--all-accounts]
 
 options:
-  -h, --help  show this help message and exit
-  --json      Emit machine-readable JSON.
-  --check     Exit nonzero when doctor finds config, shim, or queue issues.
+  -h, --help           show this help message and exit
+  --json               Emit machine-readable JSON.
+  --check              Exit nonzero when doctor finds config, shim, or queue issues.
+  --provider PROVIDER  Limit validation and probes to one provider.
+  --probe              Run live credential probes (env_command, usage HTTP, status_command). Off
+                       by default.
+  --all-accounts       Probe every enabled account instead of the default account only. Implies
+                       --probe.
 ```
 
 ## `clifwrap init`

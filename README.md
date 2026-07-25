@@ -118,6 +118,8 @@ Command costs are estimates, not billing truth. SearchCLI and ScrapeCLI defaults
 
 When capacity control picks an account, retries for that request stay on that account. A retryable upstream error will not burn through your reserve accounts.
 
+With `proactive_pick` enabled (default when usage or `status_command` is configured), clifwrap also picks the best starting account before the first upstream call so a depleted default does not burn a retry. See [docs/configuration.md](docs/configuration.md#proactive-starting-account).
+
 ### Account management from the wrapped CLI
 
 Upstream auth still works as usual:
@@ -313,6 +315,7 @@ scrapecli search "example"
 ## Docs
 
 - [Configuration](docs/configuration.md)
+- [Provider authoring](docs/provider-authoring.md)
 - [CLI reference](docs/cli-reference.md)
 - [Built-in provider catalog](docs/provider-catalog.md)
 - [Migration from cli-fallback-wrapper](docs/migration.md)

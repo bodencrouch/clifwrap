@@ -16,7 +16,14 @@ from pathlib import Path
 from .accounts import append_account, ensure_default_account_valid, list_accounts, parse_assignments, parse_command_assignments, remove_account, rename_account, set_account_enabled
 from .config import BYPASS_ENV, CURRENT_ACCOUNT_ENV, AccountConfig, ProviderConfig, WrapperConfig, load_config, merged_provider, state_dir
 from .install import original_command_for
-from .scheduling import admission_decision, capacity_snapshots, has_capacity_control
+from .scheduling import (
+    admission_decision,
+    capacity_snapshots,
+    has_capacity_control,
+    nominal_command_cost,
+    select_starting_account,
+    starting_account_eligibility,
+)
 from .state import QueueItem, drop_queue_items, get_default_account, list_queue_items, replace_queue_item, set_default_account
 
 
@@ -388,6 +395,47 @@ def _ordered_accounts(provider: ProviderConfig, allowed_names: set[str] | None =
     return accounts
 
 
+def _proactive_pick_enabled(provider: ProviderConfig) -> bool:
+    if provider.proactive_pick is not None:
+        return provider.proactive_pick
+    return bool(provider.status_command or provider.usage)
+
+
+def _reorder_accounts_from(accounts: list[AccountConfig], start_name: str | None) -> list[AccountConfig]:
+    if not start_name:
+        return accounts
+    for index, account in enumerate(accounts):
+        if account.name == start_name:
+            return accounts[index:] + accounts[:index]
+    return accounts
+
+
+def _proactive_execution_plan(
+    provider: ProviderConfig,
+    args: list[str],
+) -> tuple[list[AccountConfig] | None, list | None, str | None]:
+    if not _proactive_pick_enabled(provider):
+        return None, None, None
+    accounts = _ordered_accounts(provider)
+    if not accounts:
+        return None, None, None
+    reserve_threshold = provider.capacity_control.reserve_threshold if provider.capacity_control else 0
+    estimated_cost = nominal_command_cost(provider, args)
+    snapshots = capacity_snapshots(provider, accounts, lambda account: _account_capacity_status(provider, account))
+    active = _active_account_name(provider, accounts)
+    selection = select_starting_account(
+        snapshots,
+        active_account_name=active,
+        estimated_cost=estimated_cost,
+        reserve_threshold=reserve_threshold,
+    )
+    reordered = _reorder_accounts_from(accounts, selection.account_name)
+    notice = None
+    if selection.account_name and active and selection.account_name != active:
+        notice = f"[clifwrap] starting on {selection.account_name}: {selection.reason}\n"
+    return reordered, snapshots, notice
+
+
 def _account_capacity_status(provider: ProviderConfig, account: AccountConfig) -> tuple[str, int | None]:
     env = _account_env(account)
     usage_status = _usage_status(provider, account, env)
@@ -396,10 +444,18 @@ def _account_capacity_status(provider: ProviderConfig, account: AccountConfig) -
     return _generic_status(provider, account, env)
 
 
-def _admission(provider: ProviderConfig, args: list[str], stdin_data: bytes | None, *, existing_item: QueueItem | None = None):
+def _admission(
+    provider: ProviderConfig,
+    args: list[str],
+    stdin_data: bytes | None,
+    *,
+    existing_item: QueueItem | None = None,
+    snapshots: list | None = None,
+):
     accounts = _ordered_accounts(provider)
     active = _active_account_name(provider, accounts)
-    snapshots = capacity_snapshots(provider, accounts, lambda account: _account_capacity_status(provider, account))
+    if snapshots is None:
+        snapshots = capacity_snapshots(provider, accounts, lambda account: _account_capacity_status(provider, account))
     decision = admission_decision(
         provider,
         args,
@@ -421,9 +477,15 @@ def _run_attempts(
     *,
     emit_output: bool = True,
     allowed_account_names: set[str] | None = None,
+    account_order: list[AccountConfig] | None = None,
 ) -> int:
     command = _original_command(app, provider)
-    accounts = _ordered_accounts(provider, allowed_account_names)
+    if account_order is not None:
+        accounts = account_order
+        if allowed_account_names is not None:
+            accounts = [account for account in accounts if account.name in allowed_account_names]
+    else:
+        accounts = _ordered_accounts(provider, allowed_account_names)
     if not accounts:
         env = dict(os.environ)
         env[BYPASS_ENV] = "1"
@@ -718,31 +780,48 @@ def run_app(app: str, args: list[str]) -> int:
         return _run_line_repl(app, provider)
     stdin_data: bytes | None | object = _STDIN_UNSET
     allowed_account_names: set[str] | None = None
-    if args and has_capacity_control(provider) and _enabled_accounts(provider) and not _requests_upstream_help(args):
-        stdin_data = _capture_stdin()
-        try:
-            decision = _admission(provider, args, stdin_data)
-        except (OSError, ValueError) as exc:
-            sys.stderr.write(f"[clifwrap] queue state error for {app}: {exc}\n")
-            return 74
-        if decision.action == "queue":
-            item = decision.queue_item
-            sys.stderr.write(f"[clifwrap] deferred {app} {' '.join(args)}: {decision.reason}\n")
-            if item:
-                sys.stderr.write(f"[clifwrap] queued as {item.id}\n")
-            if decision.remediation_message:
-                sys.stderr.write(f"[clifwrap] {decision.remediation_message}\n")
-            return 73
-        if decision.action == "shed":
-            sys.stderr.write(f"[clifwrap] blocked {app} {' '.join(args)}: {decision.reason}\n")
-            if decision.remediation_message:
-                sys.stderr.write(f"[clifwrap] {decision.remediation_message}\n")
-            return 69
-        if decision.unknown_capacity:
-            sys.stderr.write(f"[clifwrap] capacity unknown for {app}; continuing because policy allows it\n")
-        elif decision.capacity_approved and decision.account_name:
-            allowed_account_names = {decision.account_name}
-    return _run_attempts(app, provider, args, stdin_data, allowed_account_names=allowed_account_names)
+    account_order: list[AccountConfig] | None = None
+    snapshots = None
+    if args and _enabled_accounts(provider) and not _requests_upstream_help(args):
+        if _proactive_pick_enabled(provider):
+            if stdin_data is _STDIN_UNSET:
+                stdin_data = _capture_stdin()
+            account_order, snapshots, notice = _proactive_execution_plan(provider, args)
+            if notice:
+                sys.stderr.write(notice)
+        if has_capacity_control(provider):
+            if stdin_data is _STDIN_UNSET:
+                stdin_data = _capture_stdin()
+            try:
+                decision = _admission(provider, args, stdin_data, snapshots=snapshots)
+            except (OSError, ValueError) as exc:
+                sys.stderr.write(f"[clifwrap] queue state error for {app}: {exc}\n")
+                return 74
+            if decision.action == "queue":
+                item = decision.queue_item
+                sys.stderr.write(f"[clifwrap] deferred {app} {' '.join(args)}: {decision.reason}\n")
+                if item:
+                    sys.stderr.write(f"[clifwrap] queued as {item.id}\n")
+                if decision.remediation_message:
+                    sys.stderr.write(f"[clifwrap] {decision.remediation_message}\n")
+                return 73
+            if decision.action == "shed":
+                sys.stderr.write(f"[clifwrap] blocked {app} {' '.join(args)}: {decision.reason}\n")
+                if decision.remediation_message:
+                    sys.stderr.write(f"[clifwrap] {decision.remediation_message}\n")
+                return 69
+            if decision.unknown_capacity:
+                sys.stderr.write(f"[clifwrap] capacity unknown for {app}; continuing because policy allows it\n")
+            elif decision.capacity_approved and decision.account_name:
+                allowed_account_names = {decision.account_name}
+    return _run_attempts(
+        app,
+        provider,
+        args,
+        stdin_data,
+        allowed_account_names=allowed_account_names,
+        account_order=account_order,
+    )
 
 
 def _queue_item_pending_update(item: QueueItem, reason: str) -> QueueItem:
@@ -792,16 +871,23 @@ def replay_queue(provider_name: str | None = None, *, item_id: str | None = None
         provider = _provider_for(item.provider, config)
         stdin_data = base64.b64decode(item.stdin_b64) if item.stdin_b64 else None
         allowed_account_names: set[str] | None = None
-        if provider.capacity_control and _enabled_accounts(provider):
-            decision = _admission(provider, item.argv, stdin_data, existing_item=item)
-            if decision.action != "execute":
-                result["status"] = "blocked"
-                result["reason"] = decision.reason
-                results.append(result)
-                exit_code = max(exit_code, 1)
-                continue
-            if decision.capacity_approved and decision.account_name:
-                allowed_account_names = {decision.account_name}
+        account_order: list[AccountConfig] | None = None
+        snapshots = None
+        if _enabled_accounts(provider):
+            if _proactive_pick_enabled(provider):
+                account_order, snapshots, notice = _proactive_execution_plan(provider, item.argv)
+                if notice and not json_output:
+                    sys.stderr.write(notice)
+            if provider.capacity_control:
+                decision = _admission(provider, item.argv, stdin_data, existing_item=item, snapshots=snapshots)
+                if decision.action != "execute":
+                    result["status"] = "blocked"
+                    result["reason"] = decision.reason
+                    results.append(result)
+                    exit_code = max(exit_code, 1)
+                    continue
+                if decision.capacity_approved and decision.account_name:
+                    allowed_account_names = {decision.account_name}
         updated = _queue_item_pending_update(item, "replay started")
         replace_queue_item(updated)
         rc = _run_attempts(
@@ -811,6 +897,7 @@ def replay_queue(provider_name: str | None = None, *, item_id: str | None = None
             stdin_data,
             emit_output=not json_output,
             allowed_account_names=allowed_account_names,
+            account_order=account_order,
         )
         result["status"] = "executed" if rc == 0 else "failed"
         result["exit_code"] = rc
@@ -977,6 +1064,7 @@ def _status_snapshot(app: str, provider: ProviderConfig) -> dict:
     payload = {
         "provider": app,
         "configured_accounts": len(provider.accounts),
+        "proactive_pick": provider.proactive_pick,
         "low_fallback": None,
         "recovery_error": None,
         "capacity_control": None,
@@ -1012,6 +1100,8 @@ def _status_snapshot(app: str, provider: ProviderConfig) -> dict:
             "remediation_message": provider.capacity_control.remediation_message,
             "remediation_commands": provider.capacity_control.remediation_commands,
         }
+    reserve_threshold = provider.capacity_control.reserve_threshold if provider.capacity_control else 0
+    estimated_cost = nominal_command_cost(provider)
     for account in provider.accounts:
         row = {
             "name": account.name,
@@ -1019,22 +1109,46 @@ def _status_snapshot(app: str, provider: ProviderConfig) -> dict:
             "detail": None,
             "remaining": None,
             "error": None,
+            "starting_eligible": False,
+            "starting_ineligible_reason": None,
         }
         accounts.append(row)
         if not account.enabled:
             row["detail"] = "disabled"
+            eligible, reason = starting_account_eligibility(
+                None,
+                estimated_cost=estimated_cost,
+                reserve_threshold=reserve_threshold,
+                enabled=False,
+            )
+            row["starting_eligible"] = eligible
+            row["starting_ineligible_reason"] = reason
             continue
         try:
             env = _account_env(account)
         except Exception as exc:
             row["detail"] = "configuration error"
             row["error"] = str(exc)
+            eligible, reason = starting_account_eligibility(
+                None,
+                estimated_cost=estimated_cost,
+                reserve_threshold=reserve_threshold,
+            )
+            row["starting_eligible"] = eligible
+            row["starting_ineligible_reason"] = reason
             continue
         try:
             usage_status = _usage_status(provider, account, env)
         except Exception as exc:
             row["detail"] = "usage lookup failed"
             row["error"] = str(exc)
+            eligible, reason = starting_account_eligibility(
+                None,
+                estimated_cost=estimated_cost,
+                reserve_threshold=reserve_threshold,
+            )
+            row["starting_eligible"] = eligible
+            row["starting_ineligible_reason"] = reason
             continue
         if usage_status:
             detail, remaining = usage_status
@@ -1042,6 +1156,13 @@ def _status_snapshot(app: str, provider: ProviderConfig) -> dict:
             detail, remaining = _generic_status(provider, account, env)
         row["detail"] = detail
         row["remaining"] = remaining
+        eligible, reason = starting_account_eligibility(
+            remaining,
+            estimated_cost=estimated_cost,
+            reserve_threshold=reserve_threshold,
+        )
+        row["starting_eligible"] = eligible
+        row["starting_ineligible_reason"] = reason
         if remaining is not None:
             remaining_values.append(remaining)
     if remaining_values:

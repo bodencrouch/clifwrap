@@ -9,10 +9,11 @@ from pathlib import Path
 
 from . import __version__
 from .accounts import append_account, ensure_config_exists, ensure_default_account_valid, import_account_spec, list_accounts, parse_assignments, parse_command_assignments, remove_account, rename_account, set_account_enabled
-from .config import SHIM_ENV, config_path, load_config, shim_bin_dir, state_dir
+from .config import SHIM_ENV, config_path, load_config, merged_provider, shim_bin_dir, state_dir
 from .install import install_shim, is_managed_shim, load_state, uninstall_shim
 from .runtime import replay_queue, run_app, status_all, status_for
 from .state import drop_queue_items, get_default_account, list_queue_items, set_default_account
+from .validation import findings_to_dict, probe_accounts, validate_provider_static
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -34,6 +35,9 @@ def _parser() -> argparse.ArgumentParser:
     doctor_parser = subparsers.add_parser("doctor", help="Inspect local config, state, shims, and queue health.")
     doctor_parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
     doctor_parser.add_argument("--check", action="store_true", help="Exit nonzero when doctor finds config, shim, or queue issues.")
+    doctor_parser.add_argument("--provider", help="Limit validation and probes to one provider.")
+    doctor_parser.add_argument("--probe", action="store_true", help="Run live credential probes (env_command, usage HTTP, status_command). Off by default.")
+    doctor_parser.add_argument("--all-accounts", action="store_true", help="Probe every enabled account instead of the default account only. Implies --probe.")
 
     init_parser = subparsers.add_parser("init", help="Create an empty config file if it does not exist.")
     init_parser.add_argument("--force", action="store_true", help="Overwrite the existing config with an empty config.")
@@ -171,7 +175,13 @@ def main(argv: list[str] | None = None) -> int:
             return status_all(json_output=args.json, check=args.check)
         return status_for(args.app, json_output=args.json, check=args.check)
     if args.command == "doctor":
-        return _doctor(json_output=args.json, check=args.check)
+        return _doctor(
+            json_output=args.json,
+            check=args.check,
+            provider_filter=getattr(args, "provider", None),
+            probe=getattr(args, "probe", False),
+            all_accounts=getattr(args, "all_accounts", False),
+        )
     if args.command == "init":
         path = ensure_config_exists(force=args.force)
         print(f"config: {path}")
@@ -363,6 +373,14 @@ def _config_paths(*, json_output: bool) -> int:
     return 0
 
 
+def _provider_validation_findings(config) -> list:
+    findings = []
+    for name, raw in sorted(config.providers.items()):
+        merged = merged_provider(name, raw)
+        findings.extend(validate_provider_static(merged))
+    return findings
+
+
 def _config_validate_payload() -> dict[str, object]:
     path = config_path()
     try:
@@ -376,16 +394,25 @@ def _config_validate_payload() -> dict[str, object]:
             "providers": 0,
             "accounts": 0,
             "enabled_accounts": 0,
+            "findings": [],
+            "warnings": 0,
+            "errors": 0,
         }
     accounts = [account for provider in config.providers.values() for account in provider.accounts]
+    findings = _provider_validation_findings(config)
+    errors = sum(1 for finding in findings if finding.level == "error")
+    warnings = sum(1 for finding in findings if finding.level == "warning")
     return {
         "path": str(path),
         "exists": path.exists(),
-        "valid": True,
-        "error": None,
+        "valid": errors == 0,
+        "error": None if errors == 0 else f"{errors} provider validation error(s)",
         "providers": len(config.providers),
         "accounts": len(accounts),
         "enabled_accounts": sum(1 for account in accounts if account.enabled),
+        "findings": findings_to_dict(findings),
+        "warnings": warnings,
+        "errors": errors,
     }
 
 
@@ -399,13 +426,29 @@ def _config_validate(*, json_output: bool) -> int:
             f"valid: providers={payload['providers']} accounts={payload['accounts']} "
             f"enabled_accounts={payload['enabled_accounts']}"
         )
+        findings = payload.get("findings") or []
+        if findings:
+            print("findings:")
+            for finding in findings:
+                assert isinstance(finding, dict)
+                print(f"- [{finding['level']}] {finding['message']}")
+                if finding.get("remediation"):
+                    print(f"  remediation: {finding['remediation']}")
     else:
         print(f"config: {payload['path']} ({'present' if payload['exists'] else 'missing'})")
         print(f"invalid: {payload['error']}")
+        findings = payload.get("findings") or []
+        if findings:
+            print("findings:")
+            for finding in findings:
+                assert isinstance(finding, dict)
+                print(f"- [{finding['level']}] {finding['message']}")
+                if finding.get("remediation"):
+                    print(f"  remediation: {finding['remediation']}")
     return 0 if payload["valid"] else 1
 
 
-def _doctor_payload() -> dict[str, object]:
+def _doctor_payload(*, provider_filter: str | None = None, probe: bool = False, probe_all_accounts: bool = False) -> dict[str, object]:
     config_file = config_path()
     state_directory = state_dir()
     bin_directory = shim_bin_dir()
@@ -434,6 +477,26 @@ def _doctor_payload() -> dict[str, object]:
     except ValueError as exc:
         queue_error = str(exc)
         issues.append(queue_error)
+    validation_findings = []
+    if config is not None:
+        provider_names = sorted(config.providers.keys())
+        if provider_filter:
+            if provider_filter not in config.providers:
+                issues.append(f"provider {provider_filter!r} is not configured")
+                provider_names = []
+            else:
+                provider_names = [provider_filter]
+        for provider_name in provider_names:
+            raw = config.providers[provider_name]
+            merged = merged_provider(provider_name, raw)
+            validation_findings.extend(validate_provider_static(merged))
+            if probe:
+                validation_findings.extend(
+                    probe_accounts(merged, all_accounts=probe_all_accounts)
+                )
+        for finding in validation_findings:
+            if finding.level == "error":
+                issues.append(finding.message)
     if config is not None:
         for provider_name, provider in sorted(config.providers.items()):
             enabled_accounts = [account.name for account in provider.accounts if account.enabled]
@@ -502,11 +565,18 @@ def _doctor_payload() -> dict[str, object]:
             "error": queue_error,
         },
         "issues": issues,
+        "validation": findings_to_dict(validation_findings),
+        "validation_warnings": sum(1 for finding in validation_findings if finding.level == "warning"),
+        "validation_errors": sum(1 for finding in validation_findings if finding.level == "error"),
     }
 
 
-def _doctor(*, json_output: bool, check: bool) -> int:
-    payload = _doctor_payload()
+def _doctor(*, json_output: bool, check: bool, provider_filter: str | None = None, probe: bool = False, all_accounts: bool = False) -> int:
+    payload = _doctor_payload(
+        provider_filter=provider_filter,
+        probe=probe or all_accounts,
+        probe_all_accounts=all_accounts,
+    )
     if json_output:
         sys.stdout.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
     else:
@@ -529,6 +599,16 @@ def _doctor(*, json_output: bool, check: bool) -> int:
                 f"default={provider['default_account'] or '-'} shim={shim_state}"
             )
         print(f"queue: pending={queue_state['pending']} expired={queue_state['expired']}")
+        validation = payload.get("validation") or []
+        if validation:
+            print("validation:")
+            for finding in validation:
+                assert isinstance(finding, dict)
+                print(f"- [{finding['level']}] {finding['message']}")
+                if finding.get("remediation"):
+                    print(f"  remediation: {finding['remediation']}")
+        else:
+            print("validation: none")
         issues = payload["issues"]
         if issues:
             print("issues:")
@@ -536,7 +616,12 @@ def _doctor(*, json_output: bool, check: bool) -> int:
                 print(f"- {issue}")
         else:
             print("issues: none")
-    return 1 if check and payload["issues"] else 0
+    validation = payload.get("validation") or []
+    validation_fail = any(
+        isinstance(finding, dict) and finding.get("level") in {"error", "warning"}
+        for finding in validation
+    )
+    return 1 if (check and (payload["issues"] or validation_fail)) else 0
 
 
 if __name__ == "__main__":

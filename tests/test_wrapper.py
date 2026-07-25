@@ -568,7 +568,7 @@ class WrapperTests(unittest.TestCase):
                 """\
                 [[providers.somecli.accounts]]
                 name = "primary"
-                env = { SOMECLI_TOKEN = "env:SOMECLI_TOKEN_PRIMARY" }
+                env = { SOMECLI_TOKEN = "primary-token" }
                 """
             )
         )
@@ -3264,6 +3264,350 @@ class WrapperTests(unittest.TestCase):
             estimate_command_cost(searchcli, ["search"]) + searchcli.capacity_control.reserve_threshold,
             50,
         )
+
+    def test_merged_provider_appends_retry_patterns_by_default(self) -> None:
+        from clifwrap.config import ProviderConfig, merged_provider
+
+        raw = ProviderConfig(name="searchcli", retry_patterns=["custom pattern"])
+        merged = merged_provider("searchcli", raw)
+        self.assertIn("usage limit", merged.retry_patterns)
+        self.assertIn("custom pattern", merged.retry_patterns)
+
+    def test_merged_provider_replace_retry_patterns(self) -> None:
+        from clifwrap.config import ProviderConfig, merged_provider
+
+        raw = ProviderConfig(name="searchcli", retry_patterns_replace=["only this"])
+        merged = merged_provider("searchcli", raw)
+        self.assertEqual(merged.retry_patterns, ["only this"])
+        self.assertNotIn("usage limit", merged.retry_patterns)
+
+    def test_config_validate_reports_missing_env_ref(self) -> None:
+        (self.config_dir / "config.toml").write_text(
+            textwrap.dedent(
+                """\
+                [[providers.somecli.accounts]]
+                name = "team"
+                env = { SOMECLI_TOKEN = "env:MISSING_ENV_REF" }
+                """
+            )
+        )
+        proc = self._run("config", "validate", "--json")
+        self.assertEqual(proc.returncode, 1)
+        payload = json.loads(proc.stdout)
+        self.assertFalse(payload["valid"])
+        self.assertGreaterEqual(payload["errors"], 1)
+        self.assertIn("MISSING_ENV_REF", proc.stdout)
+        self.assertNotIn("secret-value", proc.stdout)
+
+    def test_doctor_validation_warns_without_check_on_unreachable_usage(self) -> None:
+        (self.config_dir / "config.toml").write_text(
+            textwrap.dedent(
+                """\
+                [providers.somecli.usage]
+                url = "http://127.0.0.1:1/usage"
+                auth_env = "SOMECLI_TOKEN"
+
+                [[providers.somecli.accounts]]
+                name = "team"
+                env = { SOMECLI_TOKEN = "token" }
+                """
+            )
+        )
+        proc = self._run("doctor", "--probe", "--json")
+        self.assertEqual(proc.returncode, 0)
+        payload = json.loads(proc.stdout)
+        validation = payload.get("validation") or []
+        self.assertTrue(
+            any(
+                item.get("level") == "warning" and item.get("field") == "usage"
+                for item in validation
+            ),
+            validation,
+        )
+
+    def test_doctor_check_fails_on_validation_warnings(self) -> None:
+        (self.config_dir / "config.toml").write_text(
+            textwrap.dedent(
+                """\
+                [providers.somecli.usage]
+                url = "http://127.0.0.1:1/usage"
+                auth_env = "SOMECLI_TOKEN"
+
+                [[providers.somecli.accounts]]
+                name = "team"
+                env = { SOMECLI_TOKEN = "token" }
+                """
+            )
+        )
+        proc = self._run("doctor", "--probe", "--check", "--json")
+        self.assertEqual(proc.returncode, 1)
+        payload = json.loads(proc.stdout)
+        self.assertGreaterEqual(payload["validation_warnings"], 1)
+
+    def test_proactive_pick_defaults_true_with_status_command(self) -> None:
+        from clifwrap.config import ProviderConfig, merged_provider
+
+        raw = ProviderConfig(
+            name="somecli",
+            status_command=["somecli", "usage", "--json"],
+        )
+        merged = merged_provider("somecli", raw)
+        self.assertTrue(merged.proactive_pick)
+
+    def test_proactive_pick_user_opt_out(self) -> None:
+        from clifwrap.config import ProviderConfig, merged_provider
+
+        raw = ProviderConfig(
+            name="somecli",
+            status_command=["somecli", "usage", "--json"],
+            proactive_pick=False,
+        )
+        merged = merged_provider("somecli", raw)
+        self.assertFalse(merged.proactive_pick)
+
+    def test_proactive_pick_false_without_status_or_usage(self) -> None:
+        from clifwrap.config import ProviderConfig, merged_provider
+
+        merged = merged_provider("somecli", ProviderConfig(name="somecli"))
+        self.assertFalse(merged.proactive_pick)
+
+    def test_select_starting_account_picks_backup_when_default_depleted(self) -> None:
+        from clifwrap.scheduling import CapacitySnapshot, select_starting_account
+
+        snapshots = [
+            CapacitySnapshot("default", 1, "ok", 0),
+            CapacitySnapshot("backup", 50, "ok", 0),
+        ]
+        selection = select_starting_account(
+            snapshots,
+            active_account_name="default",
+            estimated_cost=1,
+            reserve_threshold=5,
+        )
+        self.assertEqual(selection.account_name, "backup")
+        self.assertTrue(selection.meets_cost_floor)
+
+    def test_select_starting_account_keeps_healthy_default(self) -> None:
+        from clifwrap.scheduling import CapacitySnapshot, select_starting_account
+
+        snapshots = [
+            CapacitySnapshot("default", 100, "ok", 0),
+            CapacitySnapshot("backup", 200, "ok", 0),
+        ]
+        selection = select_starting_account(
+            snapshots,
+            active_account_name="default",
+            estimated_cost=1,
+            reserve_threshold=5,
+        )
+        self.assertEqual(selection.account_name, "default")
+        self.assertTrue(selection.used_lazy_default)
+
+    def test_select_starting_account_unknown_capacity(self) -> None:
+        from clifwrap.scheduling import CapacitySnapshot, select_starting_account
+
+        snapshots = [
+            CapacitySnapshot("default", None, "unknown", 0, error="fail"),
+        ]
+        selection = select_starting_account(
+            snapshots,
+            active_account_name="default",
+            estimated_cost=1,
+            reserve_threshold=5,
+        )
+        self.assertEqual(selection.account_name, "default")
+        self.assertFalse(selection.meets_cost_floor)
+        self.assertIn("capacity unknown", selection.reason)
+
+    def test_select_starting_account_config_order_tiebreak(self) -> None:
+        from clifwrap.scheduling import CapacitySnapshot, select_starting_account
+
+        snapshots = [
+            CapacitySnapshot("first", 50, "ok", 0),
+            CapacitySnapshot("second", 50, "ok", 0),
+        ]
+        selection = select_starting_account(
+            snapshots,
+            active_account_name="first",
+            estimated_cost=1,
+            reserve_threshold=5,
+        )
+        self.assertEqual(selection.account_name, "first")
+
+    def test_proactive_pick_skips_depleted_default_without_failover(self) -> None:
+        target = self.bin_dir / "somecli"
+        make_executable(
+            target,
+            "#!/usr/bin/env python3\nimport os\nprint(os.environ.get('CLIFWRAP_ACCOUNT'))\n",
+        )
+        self._run("install", "somecli")
+        (self.config_dir / "config.toml").write_text(
+            textwrap.dedent(
+                f"""\
+                [providers.somecli]
+                status_command = ["{sys.executable}", "-c", "import os,json; print(json.dumps({{'remaining': int(os.environ['LEFT'])}}))"]
+
+                [[providers.somecli.accounts]]
+                name = "first"
+                env = {{ LEFT = "0" }}
+
+                [[providers.somecli.accounts]]
+                name = "second"
+                env = {{ LEFT = "20" }}
+                """
+            )
+        )
+        self._run("account", "use", "somecli", "first")
+        proc = subprocess.run(
+            ["somecli", "search"],
+            cwd=ROOT,
+            env=self.env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stdout.strip(), "second")
+        self.assertNotIn("failover", proc.stderr.lower())
+        self.assertIn("starting on second", proc.stderr)
+
+    def test_status_json_includes_starting_eligibility(self) -> None:
+        (self.config_dir / "config.toml").write_text(
+            textwrap.dedent(
+                f"""\
+                [providers.somecli]
+                status_command = ["{sys.executable}", "-c", "import os,json; print(json.dumps({{'remaining': int(os.environ['LEFT'])}}))"]
+
+                [providers.somecli.capacity_control]
+                reserve_threshold = 5
+                default_cost = 1
+
+                [[providers.somecli.accounts]]
+                name = "low"
+                env = {{ LEFT = "3" }}
+
+                [[providers.somecli.accounts]]
+                name = "high"
+                env = {{ LEFT = "20" }}
+                """
+            )
+        )
+        proc = self._run("status", "somecli", "--json")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        payload = json.loads(proc.stdout)
+        self.assertTrue(payload["proactive_pick"])
+        by_name = {row["name"]: row for row in payload["accounts"]}
+        self.assertFalse(by_name["low"]["starting_eligible"])
+        self.assertIn("below preferred", by_name["low"]["starting_ineligible_reason"])
+        self.assertTrue(by_name["high"]["starting_eligible"])
+        self.assertIsNone(by_name["high"]["starting_ineligible_reason"])
+
+    def test_proactive_pick_opt_out_keeps_depleted_default_at_runtime(self) -> None:
+        target = self.bin_dir / "somecli"
+        make_executable(
+            target,
+            "#!/usr/bin/env python3\nimport os\nprint(os.environ.get('CLIFWRAP_ACCOUNT'))\n",
+        )
+        self._run("install", "somecli")
+        (self.config_dir / "config.toml").write_text(
+            textwrap.dedent(
+                f"""\
+                [providers.somecli]
+                proactive_pick = false
+                status_command = ["{sys.executable}", "-c", "import os,json; print(json.dumps({{'remaining': int(os.environ['LEFT'])}}))"]
+
+                [[providers.somecli.accounts]]
+                name = "first"
+                env = {{ LEFT = "0" }}
+
+                [[providers.somecli.accounts]]
+                name = "second"
+                env = {{ LEFT = "20" }}
+                """
+            )
+        )
+        self._run("account", "use", "somecli", "first")
+        proc = subprocess.run(
+            ["somecli", "search"],
+            cwd=ROOT,
+            env=self.env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stdout.strip(), "first")
+        self.assertNotIn("starting on", proc.stderr)
+
+    def test_doctor_does_not_run_live_probes_without_probe_flag(self) -> None:
+        marker = Path(self.temp_dir.name) / "probe-ran.txt"
+        (self.config_dir / "config.toml").write_text(
+            textwrap.dedent(
+                f"""\
+                [providers.somecli]
+                status_command = ["{sys.executable}", "-c", "from pathlib import Path; Path({str(marker)!r}).write_text('probed'); print('{{}}')"]
+
+                [[providers.somecli.accounts]]
+                name = "only"
+                env = {{ SOMECLI_TOKEN = "token" }}
+                """
+            )
+        )
+        proc = self._run("doctor", "--json")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertFalse(marker.exists(), "doctor ran a live probe without --probe")
+
+        proc = self._run("doctor", "--probe", "--json")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertTrue(marker.exists(), "doctor --probe did not run the status_command probe")
+
+    def test_doctor_probe_does_not_leak_status_command_secrets(self) -> None:
+        secret = "supersecrettoken123"
+        (self.config_dir / "config.toml").write_text(
+            textwrap.dedent(
+                f"""\
+                [providers.somecli]
+                status_command = ["{sys.executable}", "-c", "import os,sys; print(os.environ['SOMECLI_TOKEN'], file=sys.stderr); raise SystemExit(1)"]
+
+                [[providers.somecli.accounts]]
+                name = "only"
+                env = {{ SOMECLI_TOKEN = "{secret}" }}
+                """
+            )
+        )
+        proc = self._run("doctor", "--probe", "--json")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertNotIn(secret, proc.stdout)
+        self.assertNotIn(secret, proc.stderr)
+        payload = json.loads(proc.stdout)
+        validation = payload.get("validation") or []
+        self.assertTrue(
+            any(item.get("field") == "status_command" for item in validation),
+            validation,
+        )
+
+    def test_replace_keys_apply_to_provider_without_catalog_entry(self) -> None:
+        (self.config_dir / "config.toml").write_text(
+            textwrap.dedent(
+                """\
+                [providers.somecli]
+                retry_patterns_replace = ["only this"]
+                retry_exit_codes_replace = [42]
+                passthrough_commands_replace = ["login"]
+
+                [[providers.somecli.accounts]]
+                name = "only"
+                """
+            )
+        )
+        env = self.env | {"CLIFWRAP_CONFIG": str(self.config_dir / "config.toml")}
+        with mock.patch.dict(os.environ, env, clear=True):
+            from clifwrap.config import load_config, merged_provider
+
+            merged = merged_provider("somecli", load_config().providers["somecli"])
+        self.assertEqual(merged.retry_patterns, ["only this"])
+        self.assertEqual(merged.retry_exit_codes, [42])
+        self.assertEqual(merged.passthrough_commands, ["login"])
 
 
 if __name__ == "__main__":

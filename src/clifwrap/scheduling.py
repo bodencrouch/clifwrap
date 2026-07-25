@@ -23,6 +23,14 @@ class CapacitySnapshot:
 
 
 @dataclass
+class StartingAccountSelection:
+    account_name: str | None
+    reason: str
+    used_lazy_default: bool = False
+    meets_cost_floor: bool = False
+
+
+@dataclass
 class AdmissionDecision:
     action: str
     reason: str
@@ -51,6 +59,87 @@ def estimate_command_cost(provider: ProviderConfig, args: list[str]) -> int:
     if args[0] in capacity.command_costs:
         return capacity.command_costs[args[0]]
     return capacity.default_cost
+
+
+def nominal_command_cost(provider: ProviderConfig, args: list[str] | None = None) -> int:
+    if provider.capacity_control:
+        return estimate_command_cost(provider, args or [])
+    return 1
+
+
+def starting_account_eligibility(
+    remaining: int | None,
+    *,
+    estimated_cost: int,
+    reserve_threshold: int,
+    enabled: bool = True,
+) -> tuple[bool, str | None]:
+    if not enabled:
+        return False, "disabled"
+    preferred_remaining = estimated_cost + reserve_threshold
+    if remaining is None:
+        return False, "capacity unknown"
+    if remaining >= preferred_remaining:
+        return True, None
+    if remaining >= estimated_cost:
+        return False, f"remaining {remaining} below preferred {preferred_remaining}"
+    return False, f"remaining {remaining} below cost floor {estimated_cost}"
+
+
+def select_starting_account(
+    snapshots: list[CapacitySnapshot],
+    *,
+    active_account_name: str | None,
+    estimated_cost: int,
+    reserve_threshold: int,
+) -> StartingAccountSelection:
+    preferred_remaining = estimated_cost + reserve_threshold
+    named = {snapshot.account_name: snapshot for snapshot in snapshots}
+
+    if active_account_name and active_account_name in named:
+        active_snapshot = named[active_account_name]
+        if (
+            active_snapshot.known
+            and active_snapshot.remaining is not None
+            and active_snapshot.remaining >= preferred_remaining
+        ):
+            return StartingAccountSelection(
+                active_account_name,
+                f"{active_account_name} has remaining {active_snapshot.remaining} >= preferred {preferred_remaining}",
+                used_lazy_default=True,
+                meets_cost_floor=True,
+            )
+
+    best_preferred: CapacitySnapshot | None = None
+    for snapshot in snapshots:
+        if snapshot.known and snapshot.remaining is not None and snapshot.remaining >= preferred_remaining:
+            if best_preferred is None or snapshot.remaining > best_preferred.remaining:
+                best_preferred = snapshot
+    if best_preferred is not None:
+        return StartingAccountSelection(
+            best_preferred.account_name,
+            f"{best_preferred.account_name} selected with remaining {best_preferred.remaining} >= preferred {preferred_remaining}",
+            meets_cost_floor=True,
+        )
+
+    best_affordable: CapacitySnapshot | None = None
+    for snapshot in snapshots:
+        if snapshot.known and snapshot.remaining is not None and snapshot.remaining >= estimated_cost:
+            if best_affordable is None or snapshot.remaining > best_affordable.remaining:
+                best_affordable = snapshot
+    if best_affordable is not None:
+        return StartingAccountSelection(
+            best_affordable.account_name,
+            f"{best_affordable.account_name} selected with remaining {best_affordable.remaining} >= cost {estimated_cost} (below soft reserve {preferred_remaining})",
+            meets_cost_floor=True,
+        )
+
+    fallback = active_account_name or (snapshots[0].account_name if snapshots else None)
+    if snapshots and all(not snapshot.known for snapshot in snapshots):
+        reason = "capacity unknown; starting on default account"
+    else:
+        reason = f"no account met preferred {preferred_remaining}; starting on {fallback}"
+    return StartingAccountSelection(fallback, reason)
 
 
 def _policy_snapshot(capacity: CapacityControlConfig, estimated_cost: int) -> dict[str, object]:
@@ -193,10 +282,6 @@ def admission_decision(
     if not capacity:
         return AdmissionDecision(action="execute", reason="capacity control disabled", estimated_cost=0, reserve_threshold=0)
     estimated_cost = estimate_command_cost(provider, args)
-    # Hard floor: enough credits to pay for this command.
-    # Soft reserve: prefer accounts that still have headroom above the floor.
-    preferred_remaining = estimated_cost + capacity.reserve_threshold
-    named = {snapshot.account_name: snapshot for snapshot in snapshots}
 
     def _execute(account_name: str, reason: str) -> AdmissionDecision:
         return AdmissionDecision(
@@ -208,37 +293,14 @@ def admission_decision(
             capacity_approved=True,
         )
 
-    if active_account_name and active_account_name in named:
-        active_snapshot = named[active_account_name]
-        if active_snapshot.known and active_snapshot.remaining is not None:
-            if active_snapshot.remaining >= preferred_remaining:
-                return _execute(
-                    active_account_name,
-                    f"{active_account_name} has remaining {active_snapshot.remaining} >= preferred {preferred_remaining}",
-                )
-
-    for snapshot in snapshots:
-        if snapshot.known and snapshot.remaining is not None and snapshot.remaining >= preferred_remaining:
-            return _execute(
-                snapshot.account_name,
-                f"{snapshot.account_name} selected with remaining {snapshot.remaining} >= preferred {preferred_remaining}",
-            )
-
-    # Fall back to any account that can afford the command even if below soft reserve.
-    if active_account_name and active_account_name in named:
-        active_snapshot = named[active_account_name]
-        if active_snapshot.known and active_snapshot.remaining is not None and active_snapshot.remaining >= estimated_cost:
-            return _execute(
-                active_account_name,
-                f"{active_account_name} has remaining {active_snapshot.remaining} >= cost {estimated_cost} (below soft reserve {preferred_remaining})",
-            )
-
-    for snapshot in snapshots:
-        if snapshot.known and snapshot.remaining is not None and snapshot.remaining >= estimated_cost:
-            return _execute(
-                snapshot.account_name,
-                f"{snapshot.account_name} selected with remaining {snapshot.remaining} >= cost {estimated_cost} (below soft reserve {preferred_remaining})",
-            )
+    selection = select_starting_account(
+        snapshots,
+        active_account_name=active_account_name,
+        estimated_cost=estimated_cost,
+        reserve_threshold=capacity.reserve_threshold,
+    )
+    if selection.meets_cost_floor and selection.account_name:
+        return _execute(selection.account_name, selection.reason)
 
     if snapshots and all(not snapshot.known for snapshot in snapshots):
         if capacity.unknown_capacity_action == "allow":

@@ -117,3 +117,44 @@ remediation_commands = [
   "clifwrap account list scrapecli",
   "clifwrap account add scrapecli <name> --env-ref SCRAPECLI_API_KEY=ENVVAR",
 ]
+
+# Reference-only catalog entry. Copy fields into user config or a forked providers.toml
+# when authoring a new provider. Do not install a shim for examplecli.
+# proactive_pick defaults to true when usage or status_command is configured.
+[providers.examplecli]
+retry_exit_codes = [1]
+retry_patterns = ["quota exceeded", "rate limit"]
+never_retry_patterns = ["unknown option"]
+passthrough_commands = ["login"]
+interactive_mode = "line-repl"
+
+[providers.examplecli.auth_management]
+command = "auth"
+aliases = ["accounts", "credentials"]
+
+[providers.examplecli.fallback_monitor]
+threshold = 2
+action = "warn"
+journald = false
+syslog = true
+stderr = true
+
+[providers.examplecli.usage]
+url = "https://api.examplecli.example/usage"
+auth_env = "EXAMPLECLI_API_KEY"
+timeout_seconds = 10
+remaining_path = "remaining"
+limit_path = "limit"
+label = "quota"
+
+[providers.examplecli.capacity_control]
+default_action = "queue"
+unknown_capacity_action = "allow"
+reserve_threshold = 1
+default_cost = 1
+command_costs = { search = 1, crawl = 3 }
+remediation_message = "Add another account or raise quota before replaying queued work."
+remediation_commands = [
+  "clifwrap account list examplecli",
+  "clifwrap config validate",
+]
